@@ -1,0 +1,9 @@
+﻿$lambda0 arity 1
+push-capture 0
+store-slot 0
+push-slot 0
+literal-number 1
+call-word add
+literal-number 5
+make-closure $lambda0 captures  arity 1
+apply

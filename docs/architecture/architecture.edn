@@ -1,0 +1,160 @@
+{:schema 1
+
+ :nodes
+ [{:id :expression-logic
+   :kind :abstraction
+   :title "ExpressionLogic"
+   :code "ExpressionAst.Expression"
+   :role "General expression abstraction: literals, words, calls, partials, holes, pipelines, quotations, blocks, let, lambda, if, match, declarations, conditions, restarts, generics, messages."
+   :doc "docs/architecture/general-ir.typ"}
+  {:id :pattern-logic
+   :kind :abstraction
+   :title "PatternLogic"
+   :code "PatternAst.Pattern"
+   :role "Pattern abstraction: wildcard, role-carrying variables, literals, constructors, typed patterns; templates elaborate to closed patterns."
+   :doc "docs/architecture/general-ir.typ"}
+  {:id :package-logic
+   :kind :abstraction
+   :title "PackageLogic"
+   :code "PackageAst.PackageDocument"
+   :role "Package and unit abstraction: identity, source hash, imports, exports, capabilities, kinds, predicates, ordered units."
+   :doc "docs/architecture/general-ir.typ"}
+  {:id :symbolic-abstraction
+   :kind :abstraction
+   :title "SymbolicAbstraction"
+   :code "TermIr.Term"
+   :role "Interpreter's symbolic term list and quotation body: literal, word, quote, branch, slot, closure, fail."
+   :doc "docs/architecture/term-ir.typ"}
+  {:id :lowered-abstraction
+   :kind :abstraction
+   :title "LoweredAbstraction"
+   :code "LoweredInstructions.Instruction + LoweredAbstraction"
+   :role "Lowered instruction abstraction and VM: literals, slots, calls, closures, tensor operations, branches, failure."
+   :doc "docs/kernel/native-dotnet-port.typ"}
+  {:id :type-retrieval
+   :kind :abstraction
+   :title "TypeRetrieval"
+   :code "TypeInference"
+   :role "Retrieves and elaborates types against a signature table; not a type checker."
+   :doc "docs/types/type-inference.typ"}
+  {:id :portable-documents
+   :kind :contract
+   :title "Portable documents"
+   :code "TermProgram, ExpressionDocument, PatternDocument, PackageDocument"
+   :role "Canonical schema-1 JSON forms used at the image, ABI, persistence, and package boundaries."
+   :doc "docs/architecture/general-ir.typ"}
+  {:id :domain-expression
+   :kind :abstraction
+   :title "DomainExpression and SMT"
+   :code "DomainExpression, Smt"
+   :role "Verification abstraction: typed domain expressions, sorts, guards, obligations, and SMT encodings."
+   :doc "docs/types/type-lattice.typ"}
+  {:id :image-values
+   :kind :runtime
+   :title "Image values"
+   :code "Tensor, EntryIdentity, Store, Lexicon"
+   :role "Runtime value model; not code, but the representation every abstraction lowers into."
+   :doc "docs/runtime/memory-model.typ"}
+  {:id :execution-state
+   :kind :runtime
+   :title "Execution state"
+   :code "KernelState, EvaluationState"
+   :role "State, not code: store, stack, program, roots, frames, scheduler, and effects."
+   :doc "docs/runtime/evaluator-slicing-and-scheduler.typ"}]
+
+ :edges
+ [{:from :expression-logic :to :pattern-logic :kind :embeds
+   :rationale "PatternMatch clauses carry PatternLogic patterns."}
+  {:from :expression-logic :to :lowered-abstraction :kind :lowers-to
+   :rationale "EvaluatorLowering maps the expression subset to instructions."}
+  {:from :package-logic :to :expression-logic :kind :contains
+   :rationale "A PackageUnit root is an ExpressionLogic node."}
+  {:from :expression-logic :to :portable-documents :kind :serializes-to
+   :rationale "ExpressionPortable writes the canonical expression document."}
+  {:from :pattern-logic :to :portable-documents :kind :serializes-to
+   :rationale "PatternPortable writes the canonical pattern document."}
+  {:from :package-logic :to :portable-documents :kind :serializes-to
+   :rationale "PackagePortable writes the canonical package document."}
+  {:from :expression-logic :to :type-retrieval :kind :inferred-by
+   :rationale "TypeInference elaborates against the signature table."}
+  {:from :lowered-abstraction :to :image-values :kind :executes-on
+   :rationale "The VM reads and writes the image store."}
+  {:from :symbolic-abstraction :to :image-values :kind :executes-on
+   :rationale "The interpreter reads and writes the image store."}
+  {:from :domain-expression :to :image-values :kind :projects-to
+   :rationale "Verification expressions project into the image value model."}]
+
+ :spec
+ {:title "Scale language specification"
+  :features
+  [{:id "f1" :title "Tokenizer, literals, positions" :status "Implemented" :evidence "example suite; the prose lexer is separate (D142--D149)"}
+   {:id "f2" :title "Concatenative evaluator, stack, arithmetic" :status "Implemented" :evidence "example suite; differential corpus"}
+   {:id "f3" :title "Control: quotations, `if`, `apply`, `define`, `control`" :status "Implemented" :evidence "D21, D51"}
+   {:id "f4" :title "Frames, `lookup`, closures" :status "Implemented" :evidence "D45"}
+   {:id "f5" :title "`let`, lexical bare names" :status "Implemented" :evidence "D122; differential tests"}
+   {:id "f6" :title "`lambda` parameters, arity, capture" :status "Implemented" :evidence "D123, D133"}
+   {:id "f7" :title "Pattern matching, ground subjects" :status "Implemented" :evidence "D125"}
+   {:id "f8" :title "Pattern `Pin`/`Repeated`/`Shadowing`/guards" :status "Partial" :evidence "interpreter implemented; lowered refusals; D130"}
+   {:id "f9" :title "Open-subject matching" :status "Implemented" :evidence "interpreter only"}
+   {:id "f10" :title "`PatternAnalysis`" :status "Partial" :evidence "best effort, not a proof"}
+   {:id "f11" :title "Declaration/message nodes" :status "Refused in the lowered path" :evidence "D130; interpreter-only until the registry contract"}
+   {:id "f12" :title "Sets, sorts, set operations" :status "Implemented" :evidence "D14, D36, D39"}
+   {:id "f13" :title "Subtyping (`⊆` as a word)" :status "Value-level set-subset" :evidence "D131; type-level if a consumer"}
+   {:id "f14" :title "Sequences" :status "Planned" :evidence "D132; ordered projector and words"}
+   {:id "f15" :title "Recursive types" :status "Planned" :evidence "D132; recursive reference and fixpoint"}
+   {:id "f16" :title "Multisets" :status "Out until a consumer" :evidence "D132"}
+   {:id "f17" :title "Co-products" :status "Out until a consumer" :evidence "D132"}
+   {:id "f18" :title "Unification, occurs check, Miller patterns" :status "Implemented" :evidence "D15, D59"}
+   {:id "f19" :title "P4 type-inference core" :status "Partial; core landed" :evidence "D173, D174; P4a types/schemes/constraints, P4b expression inference, and the single built-in word index in `PreludeSignatures` (`primitiveTable` is derived from it), exact effect sets, no rows or subtyping"}
+   {:id "f20" :title "P4 source ranges and lowering handoff" :status "Partial; call ranges and CLI" :evidence "D173; `InferenceDiagnostic`, `lowerExpressionWithInference`, `parseLocated` root and call/partial child ranges, `--prose-typecheck`; other child paths still open"}
+   {:id "f21" :title "`logic`/anonymous-function surface" :status "Partial" :evidence "block-scoped `logic` values and functions, anonymous `logic (x y) = body close`, bound closure calls; currying and recursion remain D172 design"}
+   {:id "f22" :title "F\\# package recursion classification" :status "Implemented for the supported F\\# subset" :evidence "D192, D194, D196, D197; F\\# abstraction, manifest tiers, diagnostics, metadata, package lowering, FCS read-off, supported body translation, classification metadata wire; unsupported forms refuse"}
+   {:id "f23" :title "Classes, slots, instances, precedence" :status "Implemented" :evidence "D43--D47"}
+   {:id "f24" :title "Method combination, metaclasses" :status "Implemented" :evidence "D48, D49"}
+   {:id "f25" :title "Conditions and restarts" :status "Implemented" :evidence "D50"}
+   {:id "f26" :title "Actors, mailboxes, links, monitors" :status "Implemented" :evidence "D63--D69"}
+   {:id "f27" :title "Supervision and deadlines" :status "Implemented" :evidence "D63"}
+   {:id "f28" :title "Channels and ChannelEvents" :status "Implemented" :evidence "D20, D26"}
+   {:id "f29" :title "Ownership, linearity, epochs, reclaim" :status "Implemented" :evidence "D30, D52--D54, D80--D90"}
+   {:id "f30" :title "Arena contract" :status "Implemented as a seam" :evidence "D89; evaluator not routed"}
+   {:id "f31" :title "Persistence of durable entries" :status "Implemented" :evidence "D87"}
+   {:id "f32" :title "Image loading, validation, swap" :status "Implemented" :evidence "D100, D105"}
+   {:id "f33" :title "C ABI, ten exports" :status "Implemented" :evidence "D95--D109, D162, D175, D192; `scale_verify` and `scale_transport_acquire` at ABI version 4; one independent handle per instance"}
+   {:id "f34" :title "Version equality at load" :status "Implemented for the kernel and C adapter" :evidence "D136, D175; ABI equality test, image-schema refusal, the adapter's compile-time guard, and the native kernel gate (D180)"}
+   {:id "f35" :title "Adapter conformance test" :status "Implemented; runs in alpha against the NativeAOT kernel" :evidence "D136, D180; `just kernel-aot` publishes the kernel and runs `components/adapter-c/conformance/`"}
+   {:id "f36" :title "Expression lowering, total" :status "Implemented" :evidence "D119, D148 P1; named refusals and the lowering differential"}
+   {:id "f37" :title "Lambda units, pattern compiler" :status "Implemented" :evidence "D123, D125, D133"}
+   {:id "f38" :title "IL writer, units and direct calls" :status "Partial" :evidence "D128, D130, D134; first-class closures refuse"}
+   {:id "f39" :title "Statically referenced AOT artifact" :status "Planned" :evidence "after the remaining opcodes"}
+   {:id "f40" :title "Portable pattern/expression/package documents" :status "Implemented" :evidence "D96, D97"}
+   {:id "f41" :title "General engine contract, source maps" :status "Partial" :evidence "D97"}
+   {:id "f42" :title "Prose sentence grammar stage 1" :status "Implemented" :evidence "D18, D55, D58"}
+   {:id "f43" :title "Prose surface, first slice" :status "Implemented" :evidence "D142--D149, D177; 36 checks, D148 P2, `scale --prose PATH`"}
+   {:id "f44" :title "Prose shell effects" :status "Implemented, Stage 1a/1b" :evidence "D147, D183, D187; `run`/`capture` host words, `shell-host`, last-command status, the `with` connective"}
+   {:id "f45" :title "Books and spells" :status "Implemented, Stage A" :evidence "D184, D194; `.book` packages, `--book`, `--cast`, prose `cast`, `book-host`, automatic recursive groups and markers"}
+   {:id "f46" :title "Callable contract" :status "Implemented, first slice" :evidence "D189; strict lowered `CallWord`, `DynamicCall`, book target `Apply`"}
+   {:id "f47" :title "Prose sentence grammar, full natural coverage" :status "Deferred" :evidence "D131; only on a product need"}
+   {:id "f48" :title "SMT, lattice, refiner, repair" :status "Implemented; deferred" :evidence "D10, D25, D56--D62, D91, D92; D131"}
+   {:id "f49" :title "Decision tables" :status "Implemented" :evidence "D13, D73, D74"}
+   {:id "f50" :title "DSPy-shaped programs" :status "Extension, prepared" :evidence "D42"}
+   {:id "f51" :title "BEAM operational parity, unmanaged arena" :status "Optional, not on the path" :evidence "D116"}
+   {:id "f52" :title "Implementation-instance IPC" :status "Partial; S1/S2" :evidence "D151, D154--D156; numeric envelope, capability 1 worker, monitor, down, Elixir wire harness"}
+   {:id "f53" :title "Language-level remote send" :status "Partial; one-way" :evidence "D157; `send-to` records a transport request, host drains"}
+   {:id "f54" :title "F\\#-equivalent pipeline" :status "Implemented" :evidence "D168--D171; LastArgument/FirstArgument, parser, portable document, lowering, whitespace stage arguments, explicit `_` partial application, reverse pipe; automatic currying deferred"}
+   {:id "f55" :title "Typed term IR / code as data" :status "Partial; P3d" :evidence "D160--D167; core term shape, portable vectors, structural verifier, receipt, `scale_verify`, term program, tagged quotation code values, structural history, no text quotation fallback; surface clause parsing and the kernel bridge keep token projections"}
+   {:id "f56" :title "Actor wire protocol" :status "Partial" :evidence "D152--D159; single-segment codec with send/reply/monitor operations; reference conformance for the frozen subset"}
+   {:id "f57" :title "Wire golden vectors and reference interop" :status "Implemented for the frozen subset" :evidence "D159; `capnp` 1.5.0 and checked-in vectors"}
+   {:id "f58" :title "Unified Julia/Elixir language" :status "Rejected" :evidence "D93 revoked by D151; `docs/rejected-ideas/unified-language.typ`"}
+   {:id "f59" :title "Scale Prelude port" :status "Deferred" :evidence "D133; after the core port"}
+   {:id "f60" :title "Native port P1" :status "Implemented for the landed subset" :evidence "D98--D125"}
+   {:id "f61" :title "Native port P2" :status "Partial" :evidence "D126, D128, D130, D134"}
+   {:id "f62" :title "Polylith workspace" :status "Implemented" :evidence "D137--D139; `just poly-check`"}
+   {:id "f63" :title "Nu external node and host skeleton" :status "Partial" :evidence "D140, D181; source skeleton tracked, prebuilt binaries/assets fetched separately, host skeleton; plan in `docs/integrations/nu-gaia-imsim.typ`"}
+   {:id "f64" :title "Demo content root" :status "Implemented" :evidence "D141; checkout and publish payload"}
+   {:id "f65" :title "Unit groups and group call frames" :status "Implemented for function groups; value-unit initialization planned" :evidence "D192, D193, D194; Unit/UnitGroup, arity, captures, InitOrder, classification, call/closure split, depth and arity refusals, book groups"}
+   {:id "f66" :title "Logic and cycle definitions" :status "Implemented" :evidence "D195; core logic/cycle words, plain-name recursion, and groups, logic self-call refusal"}
+   {:id "f67" :title "Book package contract" :status "Implemented" :evidence "D198, D199; lazy load, per-unit hashes and dependencies, main arity, call arity, cache, open imports and capability union; external package imports deferred"}
+   {:id "f68" :title "Shell policy sandbox" :status "Implemented for programs, write roots, and environment" :evidence "R12; allowed programs, allowed write roots, optional cleared environment; read paths, network policy, and package signatures remain"}
+   {:id "f69" :title "Semantic test matrix" :status "Recorded" :evidence "R13; call graphs, effect timing, capabilities, persistence, AOT, fuzz and property dimensions"}
+   {:id "f70" :title "Declarative IO install and plan layers" :status "Implemented lower layers; prose deferred" :evidence "`DeclarativeIo`; `.install` parser; Intent to Plan; realpath, confirmation, hash, trash/unlink executor; vision and Incus adapters pending"}
+   {:id "f71" :title "Host pattern boundary" :status "Implemented lower boundary; F\\#/Elixir elaborators next" :evidence "`PatternHost`; `PatternLogic` portable core; `HostOnly` refusal/lowering"}]}}

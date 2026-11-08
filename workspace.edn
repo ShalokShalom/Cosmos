@@ -1,0 +1,17 @@
+; The Polylith workspace manifest.
+;
+; The .fsproj graph is the dependency truth; `just poly-check` reconciles it
+; with this list and enforces the component boundaries. The Clojure `poly` CLI
+; is not required; `just` is the tool surface at first.
+;
+; :legacy lists what has not moved yet. Stage 2a moves the app to
+; bases/scale-cli and adds the projects/scale publish target; stage 2b splits
+; the Prelude, verification, demo, and development nodes.
+{:vcs :git
+ :top-ns "Scale"
+ :components ["kernel" "core" "prelude" "ipc" "verification" "demo" "cli" "shell-host" "book-host" "nu-host" "adapter-c"]
+ :bases ["scale-cli" "nu-game"]
+ :projects ["scale" "game" "scale-tests"]
+ :development []
+ :external ["nu-engine"]
+ :legacy []}

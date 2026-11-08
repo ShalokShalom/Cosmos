@@ -1,0 +1,369 @@
+; Semantic cross-walk: Scale implementation aspects and their linguistic
+; counterparts. This is a design map, not a linguistic theory. Relation values:
+;   :exact      same structural role and constraints
+;   :structural same formal shape, different domain
+;   :analogy    suggestive correspondence, not a formal one
+;   :none       no linguistic counterpart
+{:schema 1
+ :title "Semantic cross-walk: Scale and linguistics"
+ :description
+ "Maps the semantic aspects of the Scale implementation to the structurally similar or identical concept in linguistics, when one exists. Absence entries are implicitly :none."
+
+ :relations
+ [{:id :exact
+   :meaning "Same structural role and constraints."}
+  {:id :structural
+   :meaning "Same formal shape in a different domain."}
+  {:id :analogy
+   :meaning "Suggestive correspondence, not a formal one."}
+  {:id :none
+   :meaning "No linguistic counterpart."}]
+
+ :dimensions
+ [{:aspect "Operational semantics"
+   :scale "Evaluator, LoweredAbstraction, kernel/ABI"
+   :linguistic "Operational semantics; procedural meaning"
+   :relation :structural
+   :note "The stack/step machine is a formal operational account, not a claim about processing."}
+  {:aspect "Denotational semantics"
+   :scale "Store, Tensor, EntryIdentity"
+   :linguistic "Model-theoretic denotation; reference"
+   :relation :structural
+   :note "Values are image entries; denotation is by store identity."}
+  {:aspect "Axiomatic and proof semantics"
+   :scale "Smt, Obligation, RefinementGuard"
+   :linguistic "Truth-conditional semantics; entailment"
+   :relation :structural
+   :note "pre and not post is the obligation; a model is a counterexample."}
+  {:aspect "Type-theoretic semantics"
+   :scale "TypeRetrieval, TypeLattice, Sort"
+   :linguistic "Typed semantics; sortal restrictions"
+   :relation :structural
+   :note "Sorts constrain fields; the lattice is a projection of the document."}
+  {:aspect "Unification semantics"
+   :scale "UnificationTerm, BindingTable, unify"
+   :linguistic "Unification-based grammar (HPSG, LFG feature structures)"
+   :relation :exact
+   :note "The mechanism is the same; the feature language differs."}
+  {:aspect "Acceptability semantics"
+   :scale "Violations, Presentation, NearestSentence"
+   :linguistic "Grammaticality and acceptability judgments; repair"
+   :relation :structural
+   :note "A refusal is an acceptability judgment with a layer and a repair."}
+  {:aspect "Pragmatic semantics"
+   :scale "Condition, Restart, host words, Discourse layer"
+   :linguistic "Speech acts, repair, discourse coherence"
+   :relation :analogy
+   :note "The runtime protocol is analogous to conversational signalling, not a model of it."}
+  {:aspect "Persistence and revision"
+   :scale "Append-only Store, refinement loop"
+   :linguistic "Attestation, language change"
+   :relation :analogy
+   :note "The image records state; it does not model diachronic change."}]
+
+ :levels
+ [{:id :orthography-lexicon
+   :title "Orthography and the lexicon"
+   :items
+   [{:aspect "Tokenizer"
+     :scale "components/core/tokenizer.fs"
+     :linguistic "Orthographic word segmentation"
+     :relation :exact
+     :note "Whitespace separates words; the written level is the shared level."}
+    {:aspect "UppercaseName refusal"
+     :scale "prose-parser.fs"
+     :linguistic "Orthographic case norms and capitalization"
+     :relation :structural
+     :note "Names are lowercase by rule, not by linguistic necessity."}
+    {:aspect "VocabularyEntry"
+     :scale "Token, Form, ImplementationName, Category, IsActive"
+     :linguistic "Lexicon entry: lexeme, lemma, part of speech, productivity"
+     :relation :structural
+     :note "ImplementationName is a lemma-like key; IsActive is availability."}
+    {:aspect "Spaced phrases and of owner phrases"
+     :scale "combine, longestMatch, of phrase"
+     :linguistic "Multiword expressions, compounds, collocations"
+     :relation :structural
+     :note "Canonicalization maps a multiword form to one lexical item."}
+    {:aspect "IsActive"
+     :scale "VocabularyEntry"
+     :linguistic "Lexical blocking and attestation"
+     :relation :analogy
+     :note "Inactive words are unavailable, not ungrammatical in a human sense."}
+    {:aspect "Text literals with spaces"
+     :scale "prose-parser.fs"
+     :linguistic "Quotation and mention; use/mention distinction"
+     :relation :exact
+     :note "The literal names its content; the content is not evaluated."}
+     {:aspect "Number and atom literals"
+      :scale "ExpressionLogic"
+      :linguistic "Constants and named values; proper names"
+      :relation :structural
+      :note "Atoms are names for store entries, not indexicals."}
+     {:aspect "Real number literals"
+      :scale "ProseParser (3.5, -0.25)"
+      :linguistic "Numerals and quantities"
+      :relation :structural
+      :note "The literal is a binary64 value; there is no number morphology."}
+    {:aspect "Seed vocabulary versus image vocabulary"
+     :scale "Vocabulary.gameVocabulary, VocabularyInImage"
+     :linguistic "Lexical convention of a speech community"
+     :relation :analogy
+     :note "The seed is a starting convention; the image is the authority."}]}
+
+  {:id :morphology
+   :title "Morphology and word formation"
+   :items
+   [{:aspect "Arity and partial application"
+     :scale "LoweredInstructions, Partial, Hole"
+     :linguistic "Valency, transitivity, ellipsis and gaps"
+     :relation :structural
+     :note "A hole is an omitted argument, not a syntactic gap in a clause."}
+    {:aspect "Let, lambda, closures, captures"
+     :scale "ExpressionLogic, EvaluatorClosure"
+     :linguistic "Variable binding, anaphora, scope"
+     :relation :structural
+     :note "Lexical scope is the formal analogue of binding."}
+    {:aspect "Shape declarations"
+     :scale "prose-parser.fs, nominal constructors"
+     :linguistic "Nominal classification; records rather than inflection"
+     :relation :structural
+     :note "Fields are ordered; there is no agreement morphology."}
+     {:aspect "Generic functions and methods"
+      :scale "prose-parser.fs, EvaluatorDispatch"
+      :linguistic "Polysemy, sense selection, selectional restrictions"
+      :relation :analogy
+      :note "Dispatch selects by shape; sense selection is the linguistic analogue."}
+     {:aspect "Cycle and mutual recursion"
+      :scale "cycle, and"
+      :linguistic "Recursion; coordination of clauses"
+      :relation :analogy
+      :note "The recursion is operational; the coordination is group syntax."}]}
+
+  {:id :syntax
+   :title "Syntax"
+   :items
+   [{:aspect "Basic English parser"
+     :scale "Parser: quantifier subject relative verb"
+     :linguistic "Constituency, agreement, relative clauses"
+     :relation :exact
+     :note "Exact within the deliberately controlled grammar."}
+    {:aspect "Prose sentence grammar"
+     :scale "ProseParser: match, when, then, otherwise, close, calls, pipelines"
+     :linguistic "Conditionals, coordination, subordination"
+     :relation :structural
+     :note "The sentence is controlled prose, not unrestricted natural language."}
+    {:aspect "Pattern grammar"
+     :scale "PatternLogic: wildcard, variable roles, constructor, typed"
+     :linguistic "Structural patterns and gaps"
+     :relation :structural
+     :note "Variables carry fresh, pinned, repeated, and shadowing roles."}
+     {:aspect "Expression composition"
+      :scale "ExpressionLogic: calls, blocks, quotations, let, lambda"
+      :linguistic "Phrase structure and function application"
+      :relation :structural
+      :note "The IR is a tree; the surface is a word-oriented prose."}
+     {:aspect "Code quotations and blocks"
+      :scale "ExpressionLogic.Quotation, ExpressionLogic.Block"
+      :linguistic "Quotation, mention, and constituent grouping"
+      :relation :analogy
+      :note "A code quotation is data, not a natural-language quotation."}
+    {:aspect "Punctuation"
+     :scale "Period, comma, colon, parentheses"
+     :linguistic "Orthographic sentence boundaries and grouping"
+     :relation :exact
+     :note "The comma is a choice delimiter, not a list separator."}
+    {:aspect "Books, open, packages"
+     :scale "BookRunner, PackageLogic, open"
+     :linguistic "Language contact, borrowing, registers"
+     :relation :analogy
+     :note "Modules are not dialects; the analogy stops at shared vocabulary."}
+    {:aspect "When, then, otherwise, close"
+     :scale "ProseParser, ExpressionLogic.PatternMatch"
+     :linguistic "Conditionals and discourse markers"
+     :relation :structural
+     :note "The markers structure alternatives and closing, not tense."}]}
+
+  {:id :semantics
+   :title "Semantics"
+   :items
+   [{:aspect "Environment and lexical bindings"
+     :scale "EvaluatorEnvironment, BindingTable"
+     :linguistic "Anaphora, binding, scope"
+     :relation :structural
+     :note "A binding is a slot; the environment is the scope."}
+    {:aspect "Store and EntryIdentity"
+     :scale "Store, findPair, latest-write-wins"
+     :linguistic "Reference, coreference, identity"
+     :relation :structural
+     :note "Identity is an address; reference is a lookup."}
+    {:aspect "Unification"
+     :scale "UnificationTerm, unify, BindingTable"
+     :linguistic "Feature-structure unification (HPSG, LFG)"
+     :relation :exact
+     :note "The algorithm is the same; the features are terms."}
+    {:aspect "Types and sorts"
+     :scale "TypeRetrieval, TypeLattice, Sort"
+     :linguistic "Semantic types and sortal restrictions"
+     :relation :structural
+     :note "Sorts restrict membership; types restrict composition."}
+    {:aspect "Sets and declarations"
+     :scale "Set, ValueSet, Declaration, seal"
+     :linguistic "Extensional semantics and categorization"
+     :relation :structural
+     :note "A declaration names a set; membership is extensional."}
+     {:aspect "Guards and refinements"
+      :scale "RefinementGuard, Smt"
+      :linguistic "Presupposition, restriction, entailment"
+      :relation :analogy
+      :note "A guard restricts a domain; a presupposition restricts use."}
+     {:aspect "Runtime guard metaobjects"
+      :scale "EvaluatorRuntimeGuard"
+      :linguistic "Dynamic conditions and guards"
+      :relation :structural
+      :note "The guard is a store-resident quotation; the linguistic guard is a condition."}
+    {:aspect "Dispatch"
+     :scale "EvaluatorDispatch, NoApplicableMethod, AmbiguousDispatch"
+     :linguistic "Sense selection and ambiguity resolution"
+     :relation :analogy
+     :note "Ambiguity is refused, never silently resolved."}
+    {:aspect "Decision tables"
+     :scale "DecisionTable: Row, HitPolicy, Selection"
+     :linguistic "Conditional rules and pragmatic reasoning"
+     :relation :analogy
+     :note "A hit policy is a resolution strategy, not a conversational rule."}
+    {:aspect "Classes and instances"
+     :scale "EvaluatorClassSystem"
+     :linguistic "Ontology and identity; not a linguistic category"
+     :relation :none
+     :note "Identity, slots, and inheritance have no direct linguistic analogue."}
+    {:aspect "Ownership and linear values"
+     :scale "EvaluatorOwnership"
+     :linguistic "Linear logic and resource sensitivity (Lambek)"
+     :relation :structural
+     :note "Resource sensitivity is the structural analogue, not a linguistic universal."}
+     {:aspect "SMT models and unsat cores"
+      :scale "Smt, SolverAssignment, Violations.UnsatCore"
+      :linguistic "Model theory and counterexample semantics"
+      :relation :structural
+      :note "A model witnesses satisfiability; a core explains entailment."}]}
+
+  {:id :pragmatics-discourse
+   :title "Pragmatics and discourse"
+   :items
+   [{:aspect "Violation layers"
+     :scale "Lexical, Structural, Agreement, Sortal, Binding, Semantic, Discourse"
+     :linguistic "Levels of linguistic analysis"
+     :relation :exact
+     :note "The layer names are the linguistic levels; the phases are implementation phases."}
+    {:aspect "Blame"
+     :scale "Violations.Blame: Input, CoverageGap"
+     :linguistic "Speaker/hearer responsibility; not a standard linguistic category"
+     :relation :analogy
+     :note "Blame is about the specification's coverage, not about a speaker."}
+    {:aspect "NearestSentence and Advice"
+     :scale "NearestSentence, Presentation.withNearestSentence"
+     :linguistic "Repair initiation, correction, clarification"
+     :relation :analogy
+     :note "The repair is syntactic and diagnostic, not conversational."}
+    {:aspect "Presentation"
+     :scale "Presentation.render, renderTechnical"
+     :linguistic "Metalinguistic explanation"
+     :relation :analogy
+     :note "The explanation is for a person reading a diagnostic."}
+    {:aspect "Diagnostics sink"
+     :scale "Diagnostics.Sink"
+     :linguistic "Discourse coherence and consistency"
+     :relation :analogy
+     :note "Ordered violations are a consistency record, not a discourse."}
+    {:aspect "Run, capture, feed, save"
+     :scale "ProseShell, ShellHost"
+     :linguistic "Directives, performatives, speech acts"
+     :relation :analogy
+     :note "The commands have effects; the speech-act reading is a design metaphor."}
+    {:aspect "Actors and channels"
+     :scale "EvaluatorScheduler, Channel, mailbox"
+     :linguistic "Turn-taking and adjacency pairs"
+     :relation :analogy
+     :note "Mailboxes model message passing, not conversational structure."}
+    {:aspect "Conditions and restarts"
+     :scale "EvaluatorCondition, handlers, restarts"
+     :linguistic "Repair, backchannels, clarification requests"
+     :relation :analogy
+     :note "The protocol is non-local control, not conversational repair."}
+    {:aspect "History and bookmarks"
+     :scale "EvaluatorHistory, Bookmark"
+     :linguistic "Discourse memory, revision, anaphora resolution"
+     :relation :analogy
+     :note "History is an execution log, not a record of what was said."}
+    {:aspect "Prose, book, and core surfaces"
+     :scale "ProseParser, BookRunner, core parser"
+     :linguistic "Register and style"
+     :relation :analogy
+     :note "The surfaces are registers of one system, not social varieties."}
+    {:aspect "Basic English verification surface"
+     :scale "Parser, Violations, DecisionTable"
+     :linguistic "Controlled natural language"
+     :relation :exact
+     :note "A controlled natural language is the exact category."}]}
+
+  {:id :diachrony-metalanguage
+   :title "Diachrony, metalanguage, and performance"
+   :items
+   [{:aspect "Append-only image"
+     :scale "Store, PreludeImage"
+     :linguistic "Attestation and historical record"
+     :relation :analogy
+     :note "The image is persistent state; it does not evolve by itself."}
+    {:aspect "Refinement loop"
+     :scale "Refiner, DecisionTable promotion"
+     :linguistic "Language change and correction"
+     :relation :analogy
+     :note "The loop grows a specification; it is not diachronic change."}
+    {:aspect "Interpreter and lowered path"
+     :scale "Evaluator, LoweredAbstraction, writer"
+     :linguistic "Competence versus performance"
+     :relation :analogy
+     :note "Two execution paths are an engineering split, not a mental distinction."}
+    {:aspect "Kernel, ABI, cache, build"
+     :scale "components/kernel, tools"
+     :linguistic "No counterpart"
+     :relation :none
+     :note "These are implementation machinery."}
+    {:aspect "Error catalog"
+     :scale "Violations, ProseError, EvaluationError"
+     :linguistic "Grammaticality judgments"
+     :relation :structural
+     :note "A refusal is a judgment; the catalog is the taxonomy of judgments."}]}]
+
+ :absences
+ [{:aspect "Phonetics and phonology"
+   :note "There is no spoken form; orthography and tokenization are the written counterpart."}
+  {:aspect "Prosody"
+   :note "Only punctuation remains; there is no stress, intonation, or rhythm."}
+  {:aspect "Inflectional morphology"
+   :note "No tense, number, gender, or case inflection."}
+  {:aspect "Politeness and face"
+   :note "No politeness system; the shell and diagnostics are not face work."}
+  {:aspect "Metaphor and figurative language"
+   :note "No metaphor mechanism; text is literal."}
+  {:aspect "Sociolinguistic variation"
+   :note "No dialects or social varieties; books and open are module visibility."}
+  {:aspect "Diachronic change"
+   :note "The append-only image is persistence, not language change."}
+  {:aspect "Information structure"
+   :note "No topic/focus marking beyond fields and guards."}
+  {:aspect "Semantic prosody"
+   :note "No connotation or evaluative coloring."}]
+
+ :implications
+ [{:title "Diagnostics already use the right spine"
+   :text "Violation.Layer is the linguistic level hierarchy. Keep error codes aligned: LEX, SYN, AGR, SRT, BND, SEM, DSC."}
+  {:title "Naming becomes principled"
+   :text "Agreement, Discourse, Condition, Restart, Repair, and NearestSentence name real levels; use them instead of mixing Error, Failure, Fault, and Refusal."}
+  {:title "Prose is a controlled natural language"
+   :text "The prose and Basic English surfaces are deliberately controlled; the cross-walk is a design metaphor, not a claim about natural language."}
+  {:title "The gaps are honest"
+   :text "No phonology, inflection, tense, or sociolinguistic variation; saying so prevents overclaiming."}
+  {:title "Z3 fits the semantic layer"
+   :text "Countermodels are model-theoretic witnesses; unsat cores are entailment explanations; repairs are corrections at the pragmatic level."}]}

@@ -1,0 +1,4 @@
+shape item with name qty.
+logic total a b = add(field("qty" a) field("qty" b)).
+logic bump i = item(field("name" i) add(field("qty" i) 1)).
+logic main = total(bump(item("apple" 2)) item("pear" 3)).

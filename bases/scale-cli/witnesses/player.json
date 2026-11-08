@@ -1,0 +1,45 @@
+{
+  "version": 1,
+  "entries": [
+    {
+      "pattern": "Capability",
+      "conditions": ["alive"],
+      "expected": false,
+      "values": {
+        "alive": true,
+        "health": 1
+      },
+      "refinements": []
+    },
+    {
+      "pattern": "Capability",
+      "conditions": ["alive"],
+      "expected": true,
+      "values": {
+        "alive": false,
+        "health": 0
+      },
+      "refinements": []
+    },
+    {
+      "pattern": "Capability",
+      "conditions": ["alive"],
+      "expected": true,
+      "values": {
+        "alive": true,
+        "health": 2
+      },
+      "refinements": []
+    },
+    {
+      "pattern": "Invariant",
+      "conditions": [],
+      "expected": true,
+      "values": {
+        "alive": false,
+        "health": 0
+      },
+      "refinements": []
+    }
+  ]
+}

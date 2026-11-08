@@ -1,0 +1,541 @@
+﻿// Nu Game Engine.
+// Required Notice:
+// Copyright (C) Bryan Edds.
+// Nu Game Engine is licensed under the Nu Game Engine Noncommercial License.
+// See https://github.com/bryanedds/Nu/blob/master/License.md.
+
+namespace Nu.Constants
+open System
+open System.Collections.Frozen
+open System.Configuration
+open System.Diagnostics
+open System.Numerics
+open SDL
+open Prime
+open Nu
+
+[<RequireQualifiedAccess>]
+module Runtime =
+
+    let [<Uniform>] mutable GcDebug = match ConfigurationManager.AppSettings["GcDebug"] with null -> false | value -> scvalue value
+
+[<RequireQualifiedAccess>]
+module Assimp =
+
+    let [<Literal>] PostProcessSteps = Assimp.PostProcessSteps.Triangulate ||| Assimp.PostProcessSteps.GlobalScale
+    let [<Literal>] RawPropertyPrefix = "$raw."
+    let [<Literal>] RenderStylePropertyName = RawPropertyPrefix + "RenderStyle"
+    let [<Literal>] PresencePropertyName = RawPropertyPrefix + "Presence"
+    let [<Literal>] IgnoreLightMapsPropertyName = RawPropertyPrefix + "IgnoreLightMaps"
+    let [<Literal>] AnisotropyPropertyName = RawPropertyPrefix + "Anisotropy"
+    let [<Literal>] OpaqueDistancePropertyName = RawPropertyPrefix + "OpaqueDistance"
+    let [<Literal>] FinenessOffsetPropertyName = RawPropertyPrefix + "FinenessOffset"
+    let [<Literal>] ScatterTypePropertyName = RawPropertyPrefix + "ScatterType"
+    let [<Literal>] SpecularScalarPropertyName = RawPropertyPrefix + "SpecularScalar"
+    let [<Literal>] SubsurfaceCutoffPropertyName = RawPropertyPrefix + "SubsurfaceCutoff"
+    let [<Literal>] SubsurfaceCutoffMarginPropertyName = RawPropertyPrefix + "SubsurfaceCutoffMargin"
+    let [<Literal>] RefractiveIndexPropertyName = RawPropertyPrefix + "RefractiveIndex"
+    let [<Literal>] ClearCoatPropertyName = RawPropertyPrefix + "ClearCoat"
+    let [<Literal>] ClearCoatRoughnessPropertyName = RawPropertyPrefix + "ClearCoatRoughness"
+    let [<Literal>] UserDefinedSettingPropertyName = RawPropertyPrefix + "UserDefinedSetting"
+    let [<Literal>] CullModePropertyName = RawPropertyPrefix + "CullMode"
+    let [<Literal>] ClippedPropertyName = RawPropertyPrefix + "Clipped"
+    let [<Literal>] DepthTestPropertyName = RawPropertyPrefix + "DepthTest"
+    let [<Literal>] DepthWritePropertyName = RawPropertyPrefix + "DepthWrite"
+    let [<Literal>] BlendPropertyName = RawPropertyPrefix + "Blend"
+    let [<Literal>] PipelineNamePropertyName = RawPropertyPrefix + "PipelineName"
+    let [<Literal>] NavShapePropertyName = RawPropertyPrefix + "NavShape"
+
+[<RequireQualifiedAccess>]
+module Vulkan =
+
+    let [<Uniform>] TileBasedRendering = OperatingSystem.IsAndroid () || OperatingSystem.IsIOS () // TODO: update this as we can determine more platforms where tile-based rendering is used.
+    let [<Uniform>] ImmediateModeRendering = not TileBasedRendering
+    let [<Uniform>] MoltenVk = OperatingSystem.IsIOS () || match ConfigurationManager.AppSettings["MoltenVk"] with null -> true | value -> scvalue value // NOTE: setting this to false uses KosmicKrisp on macOS, but FPS of Metrics project drops from 50 to 2.
+    let [<Uniform>] FramesInFlight = 1 // NOTE: we avoid the use of multiple FiF in order to keep the renderer simple and low-latency.
+    let [<Literal>] RenderCommandBufferCountDefault = 32
+    let [<Literal>] DescriptorSetCountDefault = 32
+    let [<Literal>] SwapchainImageMax = 32 // NOTE: assuming this is a conservative maximum of the number of swapchain images available.
+    let [<Uniform>] ShadowSurfaceInstanceThreshold = if ImmediateModeRendering then 1024 else 2048 // NOTE: splitting render passes is more costly on tile-based renderers.
+    let [<Uniform>] DeferredSurfaceInstanceThreshold = if ImmediateModeRendering then 1024 else 2048 // NOTE: see above.
+    let [<Uniform>] ForwardSurfaceInstanceThreshold = if ImmediateModeRendering then 128 else 256 // NOTE: see above.
+
+[<RequireQualifiedAccess>]
+module ImGui =
+
+    let [<Uniform>] mutable ImGuiFontSize = match ConfigurationManager.AppSettings["ImGuiFontSize"] with null -> 13.0f | value -> scvalue value
+
+[<RequireQualifiedAccess>]
+module Engine =
+
+    let [<Literal>] ExitCodeSuccess = 0
+    let [<Literal>] ExitCodeFailure = 1
+    let [<Literal>] TargetFramework = "net10.0"
+    let [<Uniform>] mutable Meter2d = match ConfigurationManager.AppSettings["Meter2d"] with null -> 32.0f | value -> scvalue value
+    let [<Uniform>] mutable RunSynchronously = match ConfigurationManager.AppSettings["RunSynchronously"] with null -> false | value -> scvalue value
+    let [<Uniform>] mutable TickDeltaAveraging = match ConfigurationManager.AppSettings["TickDeltaAveraging"] with null -> false | value -> scvalue value
+    let [<Uniform>] TickDeltaMax = 1.0 / 10.0 * double Stopwatch.Frequency |> int64
+    let [<Uniform>] QuadtreeElementMagnitudeMax = 1000.0f // if volume is too big, will wreck quadtree performance
+    let [<Uniform>] OctreeElementMagnitudeMax = 100.0f // if volume is too big, will wreck octree performance
+    let [<Literal>] GameSortPriority = Single.MaxValue
+    let [<Uniform>] ScreenSortPriority = GameSortPriority * 0.5f
+    let [<Uniform>] GroupSortPriority = ScreenSortPriority * 0.5f
+    let [<Uniform>] EntitySortPriority = GroupSortPriority * 0.5f
+    let [<Literal>] NamePropertyName = "Name"
+    let [<Literal>] SurnamesPropertyName = "Surnames"
+    let [<Literal>] GameName = "Game"
+    let [<Literal>] DispatcherPropertyName = "Dispatcher"
+    let [<Literal>] PropertiesPropertyName = "Properties"
+    let [<Literal>] RequiredDispatcherPropertyName = "RequiredDispatcher"
+    let [<Literal>] FacetsPropertyName = "Facets"
+    let [<Literal>] OverlayNameOptPropertyName = "OverlayNameOpt"
+    let [<Literal>] DispatcherNamePropertyName = "DispatcherName"
+    let [<Literal>] FacetNamesPropertyName = "FacetNames"
+    let [<Literal>] MountOptPropertyName = "MountOpt"
+    let [<Literal>] ModelPropertyName = "Model"
+    let [<Literal>] TransformPropertyName = "Transform"
+    let [<Literal>] BoundsPropertyName = "Bounds"
+    let [<Literal>] XtensionPropertyName = "Xtension"
+    let [<Literal>] BodyTypePropertyName = "BodyType"
+    let [<Literal>] PhysicsMotionPropertyName = "PhysicsMotion"
+    let [<Literal>] EffectNameDefault = "Effect"
+    let [<Literal>] RefinementDir = "refinement"
+    let [<Uniform>] Entity2dSizeDefault = Vector3 (32.0f, 32.0f, 0.0f)
+    let [<Uniform>] EntityGuiSizeDefault = Vector3 (128.0f, 32.0f, 0.0f)
+    let [<Uniform>] Entity3dSizeDefault = Vector3 (1.0f, 1.0f, 1.0f)
+    let [<Uniform>] EntityVuiSizeDefault = Vector3 (4.0f, 1.0f, 1.0f)
+    let [<Uniform>] Particle2dSizeDefault = Vector3 (4.0f, 4.0f, 0.0f)
+    let [<Uniform>] Particle3dSizeDefault = Vector3 (0.25f, 0.25f, 0.25f)
+    let [<Uniform>] BodyJoint2dSizeDefault = Vector3 (16.0f, 16.0f, 0.0f)
+    let [<Uniform>] BodyJoint3dSizeDefault = Vector3 (0.25f, 0.25f, 0.25f)
+    let [<Literal>] ParticleShadowOffsetDefault = 0.15f
+    let [<Literal>] BillboardShadowOffsetDefault = 0.6f
+    let [<Uniform>] Eye3dCenterDefault = Vector3 (0.0f, 0.0f, 2.0f)
+    let [<Uniform>] Eye3dFieldOfViewDefault = MathF.PI_OVER_3
+    let [<Uniform>] mutable QuadnodeSize = match ConfigurationManager.AppSettings["QuadnodeSize"] with null -> 512.0f | value -> scvalue value
+    let [<Uniform>] mutable QuadtreeDepth = match ConfigurationManager.AppSettings["QuadtreeDepth"] with null -> 8 | value -> scvalue value
+    let [<Uniform>] QuadtreeSize = Vector2 (QuadnodeSize * single (pown 2 QuadtreeDepth))
+    let [<Uniform>] mutable OctnodeSize = match ConfigurationManager.AppSettings["OctnodeSize"] with null -> 8.0f | value -> scvalue value
+    let [<Uniform>] mutable OctreeDepth = match ConfigurationManager.AppSettings["OctreeDepth"] with null -> 8 | value -> scvalue value
+    let [<Uniform>] OctreeSize = Vector3 (OctnodeSize * single (pown 2 OctreeDepth))
+    let [<Uniform>] mutable EventTracing = match ConfigurationManager.AppSettings["EventTracing"] with null -> false | value -> scvalue value
+    let [<Uniform>] mutable EventFilter = match ConfigurationManager.AppSettings["EventFilter"] with null -> Pass | value -> scvalue value
+    let [<Uniform>] EnvironmentMagnitudeThreshold = 48.0f // sqrt (32^2 + 32^2 + 16^2) = more likely an environment than a static prop
+    let [<Uniform>] NonPersistentPropertyNames =
+        FrozenSet.ToFrozenSet
+            ([(* Simulant Properties *)
+              "Dispatcher"
+              "Content"
+              "Protection"
+              "Id"
+              (* Game Properties *)
+              "Eye3dFrustumInterior"
+              "Eye3dFrustumExterior"
+              "Eye3dFrustumImposter"
+              (* Screen Properties *)
+              "TransitionState"
+              "Nav3d"
+              (* Entity Properties *)
+              "Facets"
+              "Surnames"
+              "RotationMatrix"
+              "Angles"
+              "AnglesLocal"
+              "Degrees"
+              "DegreesLocal"
+              "AffineMatrix"
+              "PerimeterUnscaled"
+              "Perimeter"
+              "PerimeterCenter"
+              "PerimeterBottom"
+              "PerimeterBottomLeft"
+              "PerimeterMin"
+              "PerimeterMax"
+              "PerimeterCenterLocal"
+              "PerimeterBottomLocal"
+              "PerimeterBottomLeftLocal"
+              "PerimeterMinLocal"
+              "PerimeterMaxLocal"
+              "Bounds"
+              "Imperative"
+              "PresenceOverride"
+              "PublishChangeEvents"
+              "PublishPreUpdates"
+              "PublishUpdates"
+              "PublishPostUpdates"
+              "Mounted"
+              "Is2d"
+              "Is3d"
+              "Physical"
+              "LightProbe"
+              "Light"
+              "Optimized"],
+             StringComparer.Ordinal)
+    let [<Uniform>] NonDebugViewablePropertyNames =
+        FrozenSet.ToFrozenSet
+            ([(* Entity Properties *)
+              "PropagatedDescriptorOpt"],
+             StringComparer.Ordinal)
+    let [<Literal>] EngineDebug =
+#if DEBUG
+        true
+#else
+        false
+#endif
+    let [<Literal>] BuildName = if EngineDebug then "Debug" else "Release"
+
+[<RequireQualifiedAccess>]
+module Render =
+
+    let [<Uniform>] ResourceConstrained = OperatingSystem.IsAndroid () || OperatingSystem.IsIOS () // TODO: update this as we can determine more platforms that are memory-constrained.
+    let [<Literal>] IgnoreLightMapsName = "IgnoreLightMaps"
+    let [<Literal>] AnisotropyName = "Anisotropy"
+    let [<Literal>] OpaqueDistanceName = "OpaqueDistance"
+    let [<Literal>] FinenessOffsetName = "FinenessOffset"
+    let [<Literal>] ScatterTypeName = "ScatterType"
+    let [<Literal>] SpecularScalarName = "SpecularScalar"
+    let [<Literal>] SubsurfaceCutoffName = "SubsurfaceCutoff"
+    let [<Literal>] SubsurfaceCutoffMarginName = "SubsurfaceCutoffMargin"
+    let [<Literal>] RefractiveIndexName = "RefractiveIndex"
+    let [<Literal>] ClearCoatName = "ClearCoat"
+    let [<Literal>] ClearCoatRoughnessName = "ClearCoatRoughness"
+    let [<Literal>] UserDefinedSettingName = "UserDefinedSetting"
+    let [<Literal>] TwoSidedName = "TwoSided"
+    let [<Literal>] ClippedName = "Clipped"
+    let [<Literal>] PipelineNameName = "PipelineName"
+    let [<Literal>] NavShapeName = "NavShape"
+    let [<Uniform>] mutable RenderDebug = match ConfigurationManager.AppSettings["RenderDebug"] with null -> false | value -> scvalue value
+    let [<Uniform>] mutable RenderVsync = match ConfigurationManager.AppSettings["RenderVsync"] with null -> true | value -> scvalue value
+    let [<Uniform>] mutable StubRenderer3d = match ConfigurationManager.AppSettings["StubRenderer3d"] with null -> false | value -> scvalue value
+    let [<Uniform>] mutable NearPlaneDistanceInterior = match ConfigurationManager.AppSettings["NearPlaneDistanceInterior"] with null -> 0.125f | value -> scvalue value
+    let [<Uniform>] mutable FarPlaneDistanceInterior = match ConfigurationManager.AppSettings["FarPlaneDistanceInterior"] with null -> 20.0f | value -> scvalue value
+    let [<Uniform>] mutable NearPlaneDistanceExterior = match ConfigurationManager.AppSettings["NearPlaneDistanceExterior"] with null -> 20.0f | value -> scvalue value
+    let [<Uniform>] mutable FarPlaneDistanceExterior = match ConfigurationManager.AppSettings["FarPlaneDistanceExterior"] with null -> 640.0f | value -> scvalue value
+    let [<Uniform>] mutable NearPlaneDistanceImposter = match ConfigurationManager.AppSettings["NearPlaneDistanceImposter"] with null -> 640.0f | value -> scvalue value
+    let [<Uniform>] mutable FarPlaneDistanceImposter = match ConfigurationManager.AppSettings["FarPlaneDistanceImposter"] with null -> 4096.0f | value -> scvalue value
+    let [<Uniform>] mutable NearPlaneDistanceOmnipresent = NearPlaneDistanceInterior
+    let [<Uniform>] mutable FarPlaneDistanceOmnipresent = FarPlaneDistanceImposter
+    let [<Uniform>] mutable DisplayVirtualResolution = match ConfigurationManager.AppSettings["DisplayVirtualResolution"] with null -> v2i 640 360 | value -> scvalue value
+    let [<Uniform>] mutable SsaoResolutionDivisor = match ConfigurationManager.AppSettings["SsaoResolutionDivisor"] with null -> 2 | value -> scvalue value
+    let [<Uniform>] Play3dBoxSize = Vector3 64.0f
+    let [<Uniform>] WindowClearColor = Color.Zero
+    let [<Uniform>] ViewportClearColor = Color.Zero // NOTE: do not change this color as the deferred lighting shader checks if position.w zero to ignore fragment.
+    let [<Uniform>] AmbientClearColor = Color.One // NOTE: do not change this color as it has special meaning to the shader.
+    let [<Uniform>] IrradianceClearColor = Color.One // NOTE: do not change this color as it has special meaning to the shader.
+    let [<Uniform>] EnvironmentClearColor = Color.One // NOTE: do not change this color as it has special meaning to the shader.
+    let [<Uniform>] SsaoClearColor = Color.One // NOTE: do not change this color as it has special meaning to the shader.
+    let [<Literal>] TexturePriorityDefault = 0.5f // higher priority than (supposed) default, but not maximum. this value is arrived at through experimenting with a Windows NVidia driver.
+    let [<Uniform>] mutable TextureAnisotropyMax = match ConfigurationManager.AppSettings["TextureAnisotropyMax"] with null -> 16.0f | value -> scvalue value
+    let [<Uniform>] mutable TextureMinimalMipmapIndex = match ConfigurationManager.AppSettings["TextureMinimalMipmapIndex"] with null -> 2 | value -> scvalue value
+    let [<Uniform>] TextureBlockCompression = if OperatingSystem.IsMacOS () || OperatingSystem.IsAndroid () || OperatingSystem.IsIOS() then AstcCompression else BcCompression
+    let [<Literal>] SpriteBatchSize = 128 // NOTE: remember to update SPRITE_BATCH_SIZE in shaders when changing this!
+    let [<Literal>] SpriteBorderTexelScalar = 0.001f
+    let [<Literal>] SpriteMessagesPrealloc = 256
+    let [<Literal>] StaticModelMessagesPrealloc = 256
+    let [<Literal>] StaticModelSurfaceMessagesPrealloc = 256
+    let [<Literal>] BonesMax = 128 // NOTE: remember to update BONES_MAX in shaders when changing this!
+    let [<Literal>] AnimatedModelRateScalar = 30.0f // some arbitrary scale that mixamo fbx exported from blender seems to like...
+    let [<Literal>] AnimatedModelMessagesPrealloc = 128
+    let [<Literal>] AnimatedModelSurfaceMessagesPrealloc = 128
+    let [<Literal>] InstanceFieldCount = 52 // NOTE: up to 43 is reserved for engine use, 38 - 43 are free for engine use, and 44 - 51 are user-defined.
+    let [<Literal>] InstanceBatchPrealloc = 256
+    let [<Literal>] TerrainLayersMax = 6
+    let [<Literal>] BrdfResolution = 256 // NOTE: half typical resolution because we use 32-bit floats instead of 16-bit.
+    let [<Literal>] BrdfSamples = 1024
+    let [<Literal>] LightMapsMaxDeferred = 26 // NOTE: remember to update LIGHT_MAPS_MAX in deferred shaders when changing this!
+    let [<Literal>] LightMapsMaxForward = 2 // NOTE: remember to update LIGHT_MAPS_MAX in forward shaders when changing this!
+    let [<Literal>] LightsMaxDeferred = 64 // NOTE: remember to update LIGHTS_MAX in deferred shaders when changing this!
+    let [<Literal>] LightsMaxForward = 9 // NOTE: remember to update LIGHTS_MAX in forward shaders when changing this!
+    let [<Uniform>] mutable ShadowVirtualResolution = match ConfigurationManager.AppSettings["ShadowVirtualResolution"] with null -> 256 | value -> scvalue value
+    let [<Uniform>] mutable ShadowDisplayScalarMax = match ConfigurationManager.AppSettings["ShadowDisplayScalarMax"] with null -> (if ResourceConstrained then 2 else 3) | value -> scvalue value
+    let [<Literal>] ShadowTexturesMax = 12 // NOTE: remember to update SHADOW_TEXTURES_MAX in shaders when changing this!
+    let [<Literal>] ShadowMapsMax = 12 // NOTE: remember to update SHADOW_MAPS_MAX in shaders when changing this!
+    let [<Literal>] ShadowCascadesMax = 1 // NOTE: remember to update SHADOW_CASCADES_MAX in shaders when changing this!
+    let [<Literal>] ShadowCascadeLevels = 3 // NOTE: remember to update SHADOW_CASCADE_LEVELS_SIZE in shaders when changing this!
+    let [<Uniform>] mutable ShadowCascadeSplitLambda = match ConfigurationManager.AppSettings["ShadowCascadeSplitLambda"] with null -> 0.75f | value -> scvalue value // blend of logarithmic (1) and uniform (0) cascade splits
+    let [<Literal>] ShadowCascadeDepthScalar = 1.0f // how far toward the light (relative to the light cutoff) cascade casters are gathered for pancaking
+    let [<Literal>] ShadowCascadeCullScalar = 1.5f // cull volume width relative to the light cutoff, padded for cascade spheres reaching past it
+    let [<Literal>] ShadowFovMax = 2.1f // NOTE: remember to update SHADOW_FOV_MAX in shaders when changing this!
+    let [<Literal>] ReflectionMapResolution = 1024
+    let [<Literal>] IrradianceMapResolution = 32
+    let [<Literal>] EnvironmentFilterResolution = 512
+    let [<Literal>] EnvironmentFilterMips = 7 // NOTE: changing this requires changing the REFLECTION_LOD_MAX constants in shader code.
+    let [<Literal>] BloomSampleLevels = 6
+    let [<Literal>] UserDefinedSettingCount = 8 // NOTE: to change this requires more changes across F# and shaders!
+    let [<Literal>] PipelineNameDefault = "Default"
+    let [<Literal>] LightMappingEnabledDefault = true
+    let [<Literal>] LightCutoffMarginDefault = 0.4f
+    let [<Literal>] LightAmbientBoostCutoffDefault = 0.3f
+    let [<Literal>] LightAmbientBoostScalarDefault = 0.5f
+    let [<Literal>] LightShadowingEnabledDefault = true
+    let [<Literal>] LightShadowSamplesDefault = 3
+    let [<Literal>] LightShadowBiasDefault = 0.05f
+    let [<Literal>] LightShadowSampleScalarDefault = 0.02f
+    let [<Literal>] LightShadowExponentDefault = 40.0f
+    let [<Literal>] LightShadowRadiusDefault = 1.25f
+    let [<Literal>] LightShadowDensityDefault = 12.0f
+    let [<Literal>] LightMapSingletonBlendMarginDefault = 0.1f // meters
+    let [<Literal>] LightExposureDefault = 1.0f
+    let [<Uniform>] ToneMapTypeDefault = AgXToneMap
+    let [<Uniform>] ToneMapSlopeDefault = v3One
+    let [<Uniform>] ToneMapOffsetDefault = v3Zero
+    let [<Uniform>] ToneMapPowerDefault = v3One
+    let [<Literal>] ToneMapSaturationDefault = 1.0f
+    let [<Literal>] ToneMapWhitePointDefault = 4.0f
+    let [<Literal>] FogEnabledDefault = false
+    let [<Uniform>] FogTypeDefault = LinearFog
+    let [<Literal>] FogStartDefault = 8.0f
+    let [<Literal>] FogFinishDefault = 128.0f
+    let [<Literal>] FogDensityDefault = 0.01f
+    let [<Uniform>] FogColorDefault = Color.Gray.WithA 0.5f
+    let [<Literal>] SssEnabledGlobalDefault = true
+    let [<Literal>] SssEnabledLocalDefault = true
+    let [<Literal>] SsaoEnabledGlobalDefault = true
+    let [<Literal>] SsaoEnabledLocalDefault = true
+    let [<Literal>] SsaoSampleCountDefault = 12
+    let [<Literal>] SsaoSampleCountMax = 128
+    let [<Literal>] SsaoIntensityDefault = 1.25f
+    let [<Literal>] SsaoBiasDefault = 0.01f
+    let [<Literal>] SsaoRadiusDefault = 0.2f
+    let [<Literal>] SsaoDistanceMaxDefault = 0.05f
+    let [<Literal>] SsvfEnabledGlobalDefault = true
+    let [<Literal>] SsvfEnabledLocalDefault = true
+    let [<Literal>] SsvfIntensityDefault = 0.5f
+    let [<Literal>] SsvfStepsDefault = 8
+    let [<Literal>] SsvfAsymmetryDefault = 0.1f
+    let [<Literal>] SsrlEnabledGlobalDefault = true
+    let [<Literal>] SsrlEnabledLocalDefault = true
+    let [<Literal>] SsrlIntensityDefault = 0.5f
+    let [<Literal>] SsrlDetailDefault = 0.21f
+    let [<Literal>] SsrlRefinementsMaxDefault = 24
+    let [<Literal>] SsrlRayThicknessDefault = 0.025f
+    let [<Literal>] SsrlTowardEyeCutoffDefault = 0.9f
+    let [<Literal>] SsrlDepthCutoffDefault = 24.0f
+    let [<Literal>] SsrlDepthCutoffMarginDefault = 0.2f
+    let [<Literal>] SsrlDistanceCutoffDefault = 24.0f
+    let [<Literal>] SsrlDistanceCutoffMarginDefault = 0.2f
+    let [<Literal>] SsrlRoughnessCutoffDefault = 0.3f
+    let [<Literal>] SsrlRoughnessCutoffMarginDefault = 0.3f
+    let [<Literal>] SsrlSlopeCutoffDefault = 0.1f
+    let [<Literal>] SsrlSlopeCutoffMarginDefault = 0.2f
+    let [<Literal>] SsrlEdgeHorizontalMarginDefault = 0.05f
+    let [<Literal>] SsrlEdgeVerticalMarginDefault = 0.05f
+    let [<Literal>] SsrrEnabledGlobalDefault = true
+    let [<Literal>] SsrrEnabledLocalDefault = true
+    let [<Literal>] SsrrIntensityDefault = 1.0f
+    let [<Literal>] SsrrDetailDefault = 0.3f
+    let [<Literal>] SsrrRefinementsMaxDefault = 20
+    let [<Literal>] SsrrRayThicknessDefault = 0.25f
+    let [<Literal>] SsrrDistanceCutoffDefault = 64.0f
+    let [<Literal>] SsrrDistanceCutoffMarginDefault = 0.2f
+    let [<Literal>] SsrrEdgeHorizontalMarginDefault = 0.05f
+    let [<Literal>] SsrrEdgeVerticalMarginDefault = 0.05f
+    let [<Literal>] BloomEnabledGlobalDefault = true
+    let [<Literal>] BloomEnabledLocalDefault = true
+    let [<Literal>] BloomStrengthDefault = 0.03f
+    let [<Literal>] BloomThresholdDefault = 0.5f
+    let [<Literal>] BloomKarisAverageEnabledDefault = true
+    let [<Literal>] BloomFilterRadiusDefault = 0.004f
+    let [<Literal>] DepthOfFieldEnabledGlobalDefault = true
+    let [<Literal>] DepthOfFieldEnabledLocalDefault = false
+    let [<Literal>] DepthOfFieldNearDistanceDefault = 0.0f
+    let [<Literal>] DepthOfFieldFarDistanceDefault = 64.0f
+    let [<Literal>] DepthOfFieldRadiusDefault = 8.0f
+    let [<Uniform>] DepthOfFieldFocalTypeDefault = StaticFocalDistance
+    let [<Literal>] DepthOfFieldFocalDistanceDefault = 0.4f
+    let [<Uniform>] DepthOfFieldFocalPointDefault = Vector2.Zero
+    let [<Literal>] ChromaticAberrationEnabledGlobalDefault = true
+    let [<Literal>] ChromaticAberrationEnabledLocalDefault = false
+    let [<Uniform>] ChromaticAberrationChannelOffsetsDefault = Vector3 (0.003f, 0.002f, -0.002f)
+    let [<Uniform>] ChromaticAberrationFocalPointDefault = Vector2.Zero
+    let [<Literal>] FxaaEnabledDefault = true
+    let [<Literal>] FxaaSpanMaxDefault = 16.0f
+    let [<Literal>] FxaaReduceMinDivisorDefault = 64.0f
+    let [<Literal>] FxaaReduceMulDivisorDefault = 8.0f
+    let [<Literal>] LightProbeSizeDefault = 3.0f
+    let [<Literal>] BrightnessDefault = 3.0f
+    let [<Literal>] LightCutoffDefault = 3.0f
+    let [<Uniform>] AttenuationLinearDefault = 1.0f / (BrightnessDefault * LightCutoffDefault)
+    let [<Uniform>] AttenuationQuadraticDefault = 1.0f / (BrightnessDefault * pown LightCutoffDefault 2)
+    let [<Uniform>] AlbedoDefault = Color.White
+    let [<Uniform>] RoughnessDefault = 1.0f
+    let [<Literal>] MetallicDefault = 1.0f
+    let [<Literal>] AmbientOcclusionDefault = 1.0f
+    let [<Literal>] EmissionDefault = 1.0f
+    let [<Literal>] IgnoreLightMapsDefault = false
+    let [<Literal>] AnisotropyDefault = 0.0f
+    let [<Literal>] OpaqueDistanceDefault = 100000.0f
+    let [<Literal>] FinenessOffsetDefault = 0.0f
+    let [<Uniform>] ScatterTypeDefault = NoScatter
+    let [<Literal>] SpecularScalarDefault = 1.0f
+    let [<Literal>] SubsurfaceCutoffDefault = 8.0f
+    let [<Literal>] SubsurfaceCutoffMarginDefault = 0.2f
+    let [<Literal>] RefractiveIndexDefault = 1.0f
+    let [<Literal>] ClearCoatDefault = 1.0f
+    let [<Literal>] ClearCoatRoughnessDefault = 1.0f
+    let [<Literal>] FontSizeDefault = 14.0f
+    let [<Literal>] Body3dSegmentRenderMagnitudeMax = 48.0f
+    let [<Literal>] Body3dSegmentRenderDistanceMax = 40.0f
+    let [<Literal>] Body3dRenderDistanceMax = 32.0f
+
+[<RequireQualifiedAccess>]
+module Audio =
+
+    let [<Literal>] TrackPoolSize = 64
+    let [<Uniform>] mutable MasterAudioVolumeDefault = match ConfigurationManager.AppSettings["MasterAudioVolumeDefault"] with null -> 1.0f | value -> scvalue value
+    let [<Uniform>] mutable MasterSoundVolumeDefault = match ConfigurationManager.AppSettings["MasterSoundVolumeDefault"] with null -> 1.0f | value -> scvalue value
+    let [<Uniform>] mutable MasterSongVolumeDefault = match ConfigurationManager.AppSettings["MasterSongVolumeDefault"] with null -> 1.0f | value -> scvalue value
+    let [<Literal>] SoundVolumeDefault = 1.0f
+    let [<Literal>] SongVolumeDefault = 1.0f
+    let [<Uniform>] FadeOutTimeDefault = GameTime.ofSeconds 0.5
+    let [<Uniform>] SongResumptionMax = GameTime.ofSeconds 90.0 // HACK: prevents songs from starting over too often due to hack in SdlAudioPlayer.playSong.
+    let [<Literal>] FadeInSecondsMin = 0.1 // NOTE: Mix_FadeInMusicPos seems to sometimes cause audio 'popping' when starting a song, so a minimum fade is used instead.
+
+[<RequireQualifiedAccess>]
+module Physics =
+
+    let [<Uniform>] GravityDefault = Vector3 (0.0f, -9.80665f, 0.0f)
+    let [<Literal>] FrictionDefault = 0.5f
+    let [<Literal>] AngularDampingDefault = 0.2f
+    let [<Literal>] CollisionWildcard = "*"
+    let [<Literal>] Collision2dLinearSlop = 0.005f // Box2D default in meters; the package constant is internal.
+    let [<Uniform>] mutable Collision2dSteps = match ConfigurationManager.AppSettings["Collision2dSteps"] with null -> 4 | value -> scvalue value
+    let [<Uniform>] mutable Collision2dFrameCompensation = match ConfigurationManager.AppSettings["Collision2dFrameCompensation"] with null -> false | value -> scvalue value
+    let [<Uniform>] mutable Collision3dBodiesMax = match ConfigurationManager.AppSettings["Collision3dBodiesMax"] with null -> 131072 | value -> scvalue value
+    let [<Uniform>] mutable Collision3dBodyPairsMax = match ConfigurationManager.AppSettings["Collision3dBodyPairsMax"] with null -> 65536 | value -> scvalue value
+    let [<Uniform>] mutable Collision3dContactConstraintsMax = match ConfigurationManager.AppSettings["Collision3dContactConstraintsMax"] with null -> 32768 | value -> scvalue value
+    let [<Uniform>] mutable Collision3dSteps = match ConfigurationManager.AppSettings["Collision3dSteps"] with null -> 1 | value -> scvalue value
+    let [<Uniform>] mutable Collision3dThreads = match ConfigurationManager.AppSettings["Collision3dThreads"] with null -> max 1 (Environment.ProcessorCount - 2) | value -> scvalue value
+    let [<Uniform>] mutable Collision3dBarriersMax = match ConfigurationManager.AppSettings["Collision3dBarriersMax"] with null -> max 1 (Environment.ProcessorCount - 2) | value -> scvalue value
+    let [<Uniform>] mutable Collision3dJobsMax = match ConfigurationManager.AppSettings["Collision3dJobsMax"] with null -> 128 | value -> scvalue value
+    let [<Uniform>] mutable Collision3dBodyUnoptimizedCreationMax = 128 * 3 // NOTE: related to https://github.com/jrouwe/JoltPhysics/issues/1520#issuecomment-2667060129
+    let [<Uniform>] mutable GroundAngleMax = match ConfigurationManager.AppSettings["GroundAngleMax"] with null -> MathF.PI_OVER_4 | value -> scvalue value
+    let [<Uniform>] internal BroadPhaseLayerNonMoving = byte 0
+    let [<Uniform>] internal BroadPhaseLayerMoving = byte 1
+    let [<Uniform>] internal ObjectLayerNonMoving = JoltPhysicsSharp.ObjectLayer 0u
+    let [<Uniform>] internal ObjectLayerMoving = JoltPhysicsSharp.ObjectLayer 1u
+    let [<Uniform>] internal ObjectLayerDisabled = JoltPhysicsSharp.ObjectLayer 2u
+    let [<Literal>] internal InternalIndex = -1
+    let [<Uniform>] BodyPropertyAffectingPropertyNames =
+        FrozenSet.ToFrozenSet
+            (["Scale"
+              "Offset"
+              "Size"
+              "BodyEnabled"
+              "BodyFrozen"
+              "BodyType"
+              "BodyShape"
+              "SleepingAllowed"
+              "Friction"
+              "Restitution"
+              "LinearDamping"
+              "AngularDamping"
+              "AngularFactor"
+              "KinematicPushLimitOpt"
+              "Substance"
+              "Gravity"
+              "CharacterProperties"
+              "VehicleProperties"
+              "CollisionDetection"
+              "CollisionGroup"
+              "CollisionCategories"
+              "CollisionMask"
+              "Sensor"],
+             StringComparer.Ordinal)
+
+[<RequireQualifiedAccess>]
+module Nav =
+    
+    let [<Literal>] Bounds3dMagnitudeMax = 256.0f
+
+[<RequireQualifiedAccess>]
+module Lens =
+
+    let [<Literal>] ChangeName = "Change"
+    let [<Literal>] EventName = "Event"
+    let [<Uniform>] ChangeNameHash = hash ChangeName
+    let [<Uniform>] EventNameHash = hash EventName
+
+[<RequireQualifiedAccess>]
+module Associations =
+
+    let [<Literal>] Symbol = "Symbol"
+    let [<Literal>] Render2d = "Render2d"
+    let [<Literal>] Render3d = "Render3d"
+    let [<Literal>] Audio = "Audio"
+    let [<Literal>] Cursor = "Cursor"
+
+[<RequireQualifiedAccess>]
+module Gui =
+
+    let [<Uniform>] mutable SliceMarginDefault = match ConfigurationManager.AppSettings["SliceMarginDefault"] with null -> Vector2 (4.0f, 4.0f) | value -> scvalue value
+    let [<Uniform>] ColorDisabledDefault = Color (0.75f, 0.75f, 0.75f, 0.75f)
+    let [<Literal>] TextShiftDefault = 0.5f
+
+[<RequireQualifiedAccess>]
+module TileMap =
+
+    let [<Literal>] AnimationPropertyName = "A"
+    let [<Literal>] CollisionPropertyName = "C"
+    let [<Literal>] ElevationPropertyName = "E"
+    let [<Literal>] InfoPropertyName = "I"
+
+[<RequireQualifiedAccess>]
+module Particles =
+
+    let [<Literal>] RestitutionDefault = 0.9f
+
+[<RequireQualifiedAccess>]
+module Effects =
+
+    let [<Literal>] EffectHistoryMaxDefault = 60 // 1 second of effect history @ 60 fps
+
+[<RequireQualifiedAccess>]
+module Paths =
+
+    let [<Literal>] LogFilePath = "Log.txt"
+    let [<Literal>] ImGuiShaderFilePath = "Assets/Default/ImGui"
+    let [<Literal>] SpriteSingletonShaderFilePath = "Assets/Default/SpriteSingleton"
+    let [<Literal>] SpriteBatchShaderFilePath = "Assets/Default/SpriteBatch"
+    let [<Literal>] ContourShaderFilePath = "Assets/Default/Contour"
+    let [<Literal>] SkyBoxShaderFilePath = "Assets/Default/SkyBox"
+    let [<Literal>] IrradianceShaderFilePath = "Assets/Default/Irradiance"
+    let [<Literal>] EnvironmentFilterShaderFilePath = "Assets/Default/EnvironmentFilter"
+    let [<Literal>] PhysicallyBasedShadowStaticPointShaderFilePath = "Assets/Default/PhysicallyBasedShadowStaticPoint"
+    let [<Literal>] PhysicallyBasedShadowStaticSpotShaderFilePath = "Assets/Default/PhysicallyBasedShadowStaticSpot"
+    let [<Literal>] PhysicallyBasedShadowStaticDirectionalShaderFilePath = "Assets/Default/PhysicallyBasedShadowStaticDirectional"
+    let [<Literal>] PhysicallyBasedShadowAnimatedPointShaderFilePath = "Assets/Default/PhysicallyBasedShadowAnimatedPoint"
+    let [<Literal>] PhysicallyBasedShadowAnimatedSpotShaderFilePath = "Assets/Default/PhysicallyBasedShadowAnimatedSpot"
+    let [<Literal>] PhysicallyBasedShadowAnimatedDirectionalShaderFilePath = "Assets/Default/PhysicallyBasedShadowAnimatedDirectional"
+    let [<Literal>] PhysicallyBasedShadowTerrainPointShaderFilePath = "Assets/Default/PhysicallyBasedShadowTerrainPoint"
+    let [<Literal>] PhysicallyBasedShadowTerrainSpotShaderFilePath = "Assets/Default/PhysicallyBasedShadowTerrainSpot"
+    let [<Literal>] PhysicallyBasedShadowTerrainDirectionalShaderFilePath = "Assets/Default/PhysicallyBasedShadowTerrainDirectional"
+    let [<Literal>] PhysicallyBasedDeferredStaticShaderFilePath = "Assets/Default/PhysicallyBasedDeferredStatic"
+    let [<Literal>] PhysicallyBasedDeferredStaticClippedShaderFilePath = "Assets/Default/PhysicallyBasedDeferredStaticClipped"
+    let [<Literal>] PhysicallyBasedDeferredAnimatedShaderFilePath = "Assets/Default/PhysicallyBasedDeferredAnimated"
+    let [<Literal>] PhysicallyBasedDeferredTerrainShaderFilePath = "Assets/Default/PhysicallyBasedDeferredTerrain"
+    let [<Literal>] PhysicallyBasedDeferredLighting3dShaderFilePath = "Assets/Default/PhysicallyBasedDeferredLighting3d"
+    let [<Literal>] PhysicallyBasedDeferredFogging3dShaderFilePath = "Assets/Default/PhysicallyBasedDeferredFogging3d"
+    let [<Literal>] PhysicallyBasedDeferredLightMappingShaderFilePath = "Assets/Default/PhysicallyBasedDeferredLightMapping"
+    let [<Literal>] PhysicallyBasedDeferredAmbientShaderFilePath = "Assets/Default/PhysicallyBasedDeferredAmbient"
+    let [<Literal>] PhysicallyBasedDeferredIrradianceShaderFilePath = "Assets/Default/PhysicallyBasedDeferredIrradiance"
+    let [<Literal>] PhysicallyBasedDeferredEnvironmentFilterShaderFilePath = "Assets/Default/PhysicallyBasedDeferredEnvironmentFilter"
+    let [<Literal>] PhysicallyBasedDeferredSsaoShaderFilePath = "Assets/Default/PhysicallyBasedDeferredSsao"
+    let [<Literal>] PhysicallyBasedDeferredColoringShaderFilePath = "Assets/Default/PhysicallyBasedDeferredColoring"
+    let [<Literal>] PhysicallyBasedDeferredCompositionShaderFilePath = "Assets/Default/PhysicallyBasedDeferredComposition"
+    let [<Literal>] PhysicallyBasedForwardStaticShaderFilePath = "Assets/Default/PhysicallyBasedForwardStatic"
+    let [<Literal>] PhysicallyBasedForwardAnimatedShaderFilePath = "Assets/Default/PhysicallyBasedForwardAnimated"
+    let [<Literal>] FilterBox1dShaderFilePath = "Assets/Default/FilterBox1d"
+    let [<Literal>] FilterGaussianEsmShaderFilePath = "Assets/Default/FilterGaussianEsm"
+    let [<Literal>] FilterGaussianDofShaderFilePath = "Assets/Default/FilterGaussianDof"
+    let [<Literal>] FilterBilateralDownSample4dShaderFilePath = "Assets/Default/FilterBilateralDownSample4d"
+    let [<Literal>] FilterBilateralUpSample4dShaderFilePath = "Assets/Default/FilterBilateralUpSample4d"
+    let [<Literal>] FilterBloomExtractShaderFilePath = "Assets/Default/FilterBloomExtract"
+    let [<Literal>] FilterBloomDownSampleShaderFilePath = "Assets/Default/FilterBloomDownSample"
+    let [<Literal>] FilterBloomUpSampleShaderFilePath = "Assets/Default/FilterBloomUpSample"
+    let [<Literal>] FilterBloomApplyShaderFilePath = "Assets/Default/FilterBloomApply"
+    let [<Literal>] FilterDepthOfFieldShaderFilePath = "Assets/Default/FilterDepthOfField"
+    let [<Literal>] FilterToneMappingShaderFilePath = "Assets/Default/FilterToneMapping"
+    let [<Literal>] FilterChromaticAberrationShaderFilePath = "Assets/Default/FilterChromaticAberration"
+    let [<Literal>] FilterFxaaShaderFilePath = "Assets/Default/FilterFxaa"
+    let [<Literal>] FilterGammaCorrectionShaderFilePath = "Assets/Default/FilterGammaCorrection"

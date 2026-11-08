@@ -1,0 +1,114 @@
+{:schema 1
+ :spec/id "scale-specification"
+ :authority
+ {:normative "docs/specification.typ"
+  :architecture "docs/architecture/architecture.edn"
+  :types "docs/types/type-system.edn"
+  :decisions "docs/process/decision-index.typ"}
+ :generated
+ {:tool "tools/spec-model.fsx"
+  :source-hash "d7adeadb23736798af1f7cc9150cf7c8757e988f8a53f1635ab9f4f67588a854"}
+ :facts
+ {:abi {:version 4 :image-schema 2}
+  :words
+  {:expression
+   ["add" "bookmark" "channel" "choose" "close" "condition" "demonitor" "divide" "down-reason" "down-ref" "down?" "equals" "exit-reason" "exit-signal?" "greaterThan" "invoke-restart" "lessThan" "link" "monitor" "multiply" "print" "receive" "receive-event" "register" "restart" "self" "send" "send-event" "send-to" "signal" "spawn" "subtract" "supervise" "trap-exit" "unlink" "unregister" "whereis" "wrap"]
+   :stack
+   ["drop" "duplicate" "over" "rotate" "swap"]
+   :not-inferred
+   ["[" "]" "actors" "add-member" "after-method" "and" "apply" "around-method" "before-method" "bind" "borrow" "call-next-method" "cell-class" "class" "class-precedence" "compact" "constructor" "constructor-seal" "consume" "control" "control-apply" "control-cycle" "control-define" "control-if" "control-logic" "control-quotation" "copyBookmark" "create-instance" "cycle" "define" "filter" "generic" "guard" "halt" "history" "history-off" "history-on" "if" "instance-of" "is" "jump" "kill" "lambda" "lambda-term" "let" "linearity" "logic" "lookup" "match" "merge" "metaclass" "method" "next-method-p" "nor" "one-for-all" "one-for-one" "or" "own" "predicate-seal" "receive-matching" "receive-message" "reclaimable" "reduce" "release" "resolve" "rest-for-one" "resume" "rollback" "runtime-guard-define" "runtime-guard-holds" "same-name" "same-shape" "seal" "set" "set-complement" "set-except" "set-intersect" "set-member" "set-slot-value" "set-subset" "set-union" "showBookmark" "slot" "slot-value" "sort-of" "subclass-of" "sync" "term" "typed" "unify" "unify-verdict" "unname" "use-metaclass" "value-of" "with-fallback" "with-fields" "with-handler" "word" "yield" "{"]
+   :counts {:total 143}}
+  :types
+  {:layers
+   ["verification-lattice" "domain-expression" "runtime-sorts" "static-types" "runtime-shapes" "smt-theory"]
+   :properties
+   ["L1" "L2" "L3" "L4" "L5" "L6" "L7" "L8" "L9" "L10" "L11" "R1" "R2" "R3" "R4" "S1" "S2" "S3" "S4" "S5" "S6" "S7" "S8" "V1" "V2" "V3" "V4" "V5" "K1" "K2" "K3" "K4" "K5"]}
+  :features
+  [
+   {:id "f1" :title "Tokenizer, literals, positions" :status "Implemented"}
+   {:id "f2" :title "Concatenative evaluator, stack, arithmetic" :status "Implemented"}
+   {:id "f3" :title "Control: quotations, `if`, `apply`, `define`, `control`" :status "Implemented"}
+   {:id "f4" :title "Frames, `lookup`, closures" :status "Implemented"}
+   {:id "f5" :title "`let`, lexical bare names" :status "Implemented"}
+   {:id "f6" :title "`lambda` parameters, arity, capture" :status "Implemented"}
+   {:id "f7" :title "Pattern matching, ground subjects" :status "Implemented"}
+   {:id "f8" :title "Pattern `Pin`/`Repeated`/`Shadowing`/guards" :status "Partial"}
+   {:id "f9" :title "Open-subject matching" :status "Implemented"}
+   {:id "f10" :title "`PatternAnalysis`" :status "Partial"}
+   {:id "f11" :title "Declaration/message nodes" :status "Refused in the lowered path"}
+   {:id "f12" :title "Sets, sorts, set operations" :status "Implemented"}
+   {:id "f13" :title "Subtyping (`⊆` as a word)" :status "Value-level set-subset"}
+   {:id "f14" :title "Sequences" :status "Planned"}
+   {:id "f15" :title "Recursive types" :status "Planned"}
+   {:id "f16" :title "Multisets" :status "Out until a consumer"}
+   {:id "f17" :title "Co-products" :status "Out until a consumer"}
+   {:id "f18" :title "Unification, occurs check, Miller patterns" :status "Implemented"}
+   {:id "f19" :title "P4 type-inference core" :status "Partial; core landed"}
+   {:id "f20" :title "P4 source ranges and lowering handoff" :status "Partial; call ranges and CLI"}
+   {:id "f21" :title "`logic`/anonymous-function surface" :status "Partial"}
+   {:id "f22" :title "F\\# package recursion classification" :status "Implemented for the supported F\\# subset"}
+   {:id "f23" :title "Classes, slots, instances, precedence" :status "Implemented"}
+   {:id "f24" :title "Method combination, metaclasses" :status "Implemented"}
+   {:id "f25" :title "Conditions and restarts" :status "Implemented"}
+   {:id "f26" :title "Actors, mailboxes, links, monitors" :status "Implemented"}
+   {:id "f27" :title "Supervision and deadlines" :status "Implemented"}
+   {:id "f28" :title "Channels and ChannelEvents" :status "Implemented"}
+   {:id "f29" :title "Ownership, linearity, epochs, reclaim" :status "Implemented"}
+   {:id "f30" :title "Arena contract" :status "Implemented as a seam"}
+   {:id "f31" :title "Persistence of durable entries" :status "Implemented"}
+   {:id "f32" :title "Image loading, validation, swap" :status "Implemented"}
+   {:id "f33" :title "C ABI, ten exports" :status "Implemented"}
+   {:id "f34" :title "Version equality at load" :status "Implemented for the kernel and C adapter"}
+   {:id "f35" :title "Adapter conformance test" :status "Implemented; runs in alpha against the NativeAOT kernel"}
+   {:id "f36" :title "Expression lowering, total" :status "Implemented"}
+   {:id "f37" :title "Lambda units, pattern compiler" :status "Implemented"}
+   {:id "f38" :title "IL writer, units and direct calls" :status "Partial"}
+   {:id "f39" :title "Statically referenced AOT artifact" :status "Planned"}
+   {:id "f40" :title "Portable pattern/expression/package documents" :status "Implemented"}
+   {:id "f41" :title "General engine contract, source maps" :status "Partial"}
+   {:id "f42" :title "Prose sentence grammar stage 1" :status "Implemented"}
+   {:id "f43" :title "Prose surface, first slice" :status "Implemented"}
+   {:id "f44" :title "Prose shell effects" :status "Implemented, Stage 1a/1b"}
+   {:id "f45" :title "Books and spells" :status "Implemented, Stage A"}
+   {:id "f46" :title "Callable contract" :status "Implemented, first slice"}
+   {:id "f47" :title "Prose sentence grammar, full natural coverage" :status "Deferred"}
+   {:id "f48" :title "SMT, lattice, refiner, repair" :status "Implemented; deferred"}
+   {:id "f49" :title "Decision tables" :status "Implemented"}
+   {:id "f50" :title "DSPy-shaped programs" :status "Extension, prepared"}
+   {:id "f51" :title "BEAM operational parity, unmanaged arena" :status "Optional, not on the path"}
+   {:id "f52" :title "Implementation-instance IPC" :status "Partial; S1/S2"}
+   {:id "f53" :title "Language-level remote send" :status "Partial; one-way"}
+   {:id "f54" :title "F\\#-equivalent pipeline" :status "Implemented"}
+   {:id "f55" :title "Typed term IR / code as data" :status "Partial; P3d"}
+   {:id "f56" :title "Actor wire protocol" :status "Partial"}
+   {:id "f57" :title "Wire golden vectors and reference interop" :status "Implemented for the frozen subset"}
+   {:id "f58" :title "Unified Julia/Elixir language" :status "Rejected"}
+   {:id "f59" :title "Scale Prelude port" :status "Deferred"}
+   {:id "f60" :title "Native port P1" :status "Implemented for the landed subset"}
+   {:id "f61" :title "Native port P2" :status "Partial"}
+   {:id "f62" :title "Polylith workspace" :status "Implemented"}
+   {:id "f63" :title "Nu external node and host skeleton" :status "Partial"}
+   {:id "f64" :title "Demo content root" :status "Implemented"}
+   {:id "f65" :title "Unit groups and group call frames" :status "Implemented for function groups; value-unit initialization planned"}
+   {:id "f66" :title "Logic and cycle definitions" :status "Implemented"}
+   {:id "f67" :title "Book package contract" :status "Implemented"}
+   {:id "f68" :title "Shell policy sandbox" :status "Implemented for programs, write roots, and environment"}
+   {:id "f69" :title "Semantic test matrix" :status "Recorded"}
+   {:id "f70" :title "Declarative IO install and plan layers" :status "Implemented lower layers; prose deferred"}
+   {:id "f71" :title "Host pattern boundary" :status "Implemented lower boundary; F\\#/Elixir elaborators next"}
+  ]
+  :dependencies
+  [
+   {:from :expression-logic :to :pattern-logic}
+   {:from :expression-logic :to :lowered-abstraction}
+   {:from :package-logic :to :expression-logic}
+   {:from :expression-logic :to :portable-documents}
+   {:from :pattern-logic :to :portable-documents}
+   {:from :package-logic :to :portable-documents}
+   {:from :expression-logic :to :type-retrieval}
+   {:from :lowered-abstraction :to :image-values}
+   {:from :symbolic-abstraction :to :image-values}
+   {:from :domain-expression :to :image-values}
+  ]
+  :tests {:expected-checks 1868}}
+ :claims {:authority "docs/specification.typ" :generated false}}

@@ -1,0 +1,9 @@
+literal-number 1
+store-slot 0
+literal-number 2
+store-slot 1
+literal-text point
+push-slot 1
+push-slot 0
+literal-number 2
+call-word term

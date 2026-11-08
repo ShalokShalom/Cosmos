@@ -1,0 +1,89 @@
+﻿add
+literal-number 2
+literal-number 3
+add
+
+subtract
+literal-number 10
+literal-number 4
+subtract
+
+multiply
+literal-number 3
+literal-number 4
+multiply
+
+divide
+literal-number 8
+literal-number 2
+divide
+
+lessThan
+literal-number 1
+literal-number 2
+less-than
+
+greaterThan
+literal-number 2
+literal-number 1
+greater-than
+
+equals-true
+literal-number 5
+literal-number 5
+equals
+
+equals-false
+literal-number 5
+literal-number 4
+equals
+
+duplicate
+literal-number 1
+duplicate
+add
+
+swap
+literal-number 1
+literal-number 2
+swap
+subtract
+
+over
+literal-number 1
+literal-number 2
+over
+add
+
+rotate
+literal-number 1
+literal-number 2
+literal-number 3
+rotate
+
+drop
+literal-number 1
+literal-number 2
+drop
+
+chain
+literal-number 1
+literal-number 2
+add
+literal-number 3
+subtract
+
+divide-by-zero
+literal-number 1
+literal-number 0
+divide
+
+add-underflow
+add
+
+subtract-underflow
+literal-number 1
+subtract
+
+unknown-word
+call-word unknown-word

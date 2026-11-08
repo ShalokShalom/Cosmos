@@ -1,0 +1,4 @@
+# External Nu engine: an external Polylith node, not Scale source.
+# The source skeleton is kept in the repository for the host skeleton;
+# prebuilt dependencies and binary assets are fetched separately.
+components/nu-engine/

@@ -1,0 +1,13 @@
+﻿# Scale specification - the single editable source of truth.
+#
+# Edit the specification sentence below to change the specification.
+# The refinement service appends refinements beneath the fold,
+# each with the counterexample that revealed it.
+
+specification: Every player that is alive can jump.
+
+--- refinements (written by the refinement service) ---
+
+refinement: health >= 2
+  origin: solver
+  counterexample: alive=true, health=1

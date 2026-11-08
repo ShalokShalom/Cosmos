@@ -1,0 +1,327 @@
+; Basic English coverage: the full Ogden target compared with the current
+; Prose sentence grammar. Status values:
+;   :full          implemented with defined semantics
+;   :partial       a narrow or structurally different form
+;   :absent        not implemented
+;   :refused       deliberately refused by name
+;   :beyond-target current has it, but Ogden's Basic English does not
+; Scores are 0..1 and are only compared for non-beyond-target requirements.
+{:schema 1
+ :title "Basic English coverage: full Ogden target versus current implementation"
+ :description
+ "Compares Ogden's Basic English target with the current Scale Prose sentence grammar. The target is a restricted lexicon and style; it is not a formal grammar, so the comparison separates coverage from the formal semantics Scale adds."
+
+ :target
+ {:name "Ogden's Basic English"
+  :lexicon
+  {:core-words 850
+   :nouns 600
+   :adjectives 150
+   :operators 100
+   :technical-terms "allowed when defined"}
+  :operators
+  ["be" "do" "have" "come" "get" "give" "go" "keep" "let" "make"
+   "put" "seem" "take" "say" "see" "send" "may" "will"]
+  :word-formation
+  ["plural -s" "verb -ing" "verb -ed" "agent -er" "adverb -ly"
+   "comparative -er/-est" "negative un-"]
+  :sentence-patterns
+  ["statement" "question" "imperative" "negation" "conditional"
+   "relative clause" "coordination" "complement clause" "passive"]
+  :note "A style and a vocabulary, not a grammar with a formal semantics."}
+
+ :current
+ {:name "Scale Prose sentence grammar"
+  :lexicon "image-driven domain vocabulary; not the 850-word list"
+  :grammar
+  "statement ::= quantifier subject relative? verb .
+   transition ::= when subject (that)? disjunction , every subject verb .
+   condition ::= predicate | is field | has field comparison integer"
+  :operators ["is (copula)" "has (condition copula)" "can (FunctionName, not modal)"]
+  :quantifiers ["every" "no" "some"]
+  :comparisons ["greater than" "at least" "less than" "at most" "equal to"]
+  :refusals ["articles" "pronouns" "misplaced when" "not/never" "all" "bare field nouns"]
+  :formal-semantics "canonical logical form, emitter, SMT obligations"
+  :note "A controlled specification language; the vocabulary is image-resident."}
+
+ :requirements
+ [{:id :lexicon-core-850
+   :area :lexicon
+   :target "850 core words: 600 nouns, 150 adjectives, 100 operators"
+   :current "image-driven domain vocabulary; no core list"
+   :status :absent
+   :score 0.0
+   :gap "No 850-word seed or coverage register."}
+  {:id :lexicon-technical-terms
+   :area :lexicon
+   :target "technical terms allowed when defined"
+   :current "image vocabulary accepts new domain words"
+   :status :partial
+   :score 0.5
+   :gap "The mechanism exists; there is no definition or registration discipline."}
+  {:id :lexicon-word-classes
+   :area :lexicon
+   :target "nouns, adjectives, operators"
+   :current "TypeName, FieldName, FunctionName, Comparison, Copula, quantifiers"
+   :status :partial
+   :score 0.5
+   :gap "Adjectives are not a category; operators are not a category."}
+
+  {:id :operator-be
+   :area :operators
+   :target "be"
+   :current "is (condition copula only)"
+   :status :partial
+   :score 0.5
+   :gap "No general be-operator, predication, or identity use."}
+  {:id :operator-have
+   :area :operators
+   :target "have"
+   :current "has (condition copula only)"
+   :status :partial
+   :score 0.5
+   :gap "No possession, obligation, or perfect use."}
+  {:id :operator-system
+   :area :operators
+   :target "18 operators: be, do, have, come, get, give, go, keep, let, make, put, seem, take, say, see, send, may, will"
+   :current "is, has, can (can is a FunctionName, not a modal)"
+   :status :absent
+   :score 0.1
+   :gap "The operator system and its formal semantics are missing."}
+
+  {:id :closed-pronouns
+   :area :closed-class
+   :target "I, you, he, she, it, we, they, this, that, and related forms"
+   :current "refused with PronounNotAllowed or UnknownToken"
+   :status :refused
+   :score 0.0
+   :gap "No anaphora or antecedent resolution."}
+  {:id :closed-articles
+   :area :closed-class
+   :target "the, a, an"
+   :current "refused with ArticleNotAllowed"
+   :status :refused
+   :score 0.0
+   :gap "No articles; universal specifications use bare singular subjects."}
+  {:id :closed-prepositions
+   :area :closed-class
+   :target "a small preposition set: of, to, in, for, with, on, at, by, from"
+   :current "of in owner phrases; with in shell commands; no general set"
+   :status :partial
+   :score 0.25
+   :gap "No general prepositional phrases or spatial relations."}
+  {:id :closed-conjunctions
+   :area :closed-class
+   :target "and, or, but, if, because"
+   :current "and/or between conditions; when-transition"
+   :status :partial
+   :score 0.4
+   :gap "No but, because, or sentence coordination."}
+  {:id :closed-quantifiers
+   :area :closed-class
+   :target "all, every, some, no, any"
+   :current "every, no, some; all refused"
+   :status :partial
+   :score 0.6
+   :gap "No any; no quantifier scope."}
+  {:id :closed-comparison
+   :area :closed-class
+   :target "-er/-est, more/most, as...as, than"
+   :current "five integer comparisons: greater than, at least, less than, at most, equal to"
+   :status :partial
+   :score 0.4
+   :gap "No adjective comparison or degree morphology."}
+
+  {:id :grammar-tense-aspect
+   :area :grammar
+   :target "simplified past and future through operators"
+   :current "no tense or aspect; transitions are event-triggered"
+   :status :absent
+   :score 0.0
+   :gap "No temporal semantics."}
+  {:id :grammar-plural
+   :area :grammar
+   :target "plural -s"
+   :current "no inflection; subjects are singular"
+   :status :absent
+   :score 0.0
+   :gap "No number morphology or plural agreement."}
+  {:id :grammar-word-formation
+   :area :grammar
+   :target "verb -ing/-ed, agent -er, adverb -ly, comparative -er/-est, negative un-"
+   :current "none; multiword vocabulary forms only"
+   :status :absent
+   :score 0.0
+   :gap "No derivational or inflectional morphology."}
+  {:id :grammar-statement
+   :area :grammar
+   :target "statement, including SVO"
+   :current "quantifier subject relative? verb"
+   :status :partial
+   :score 0.5
+   :gap "One statement pattern; no general SVO or verb phrase."}
+  {:id :grammar-question
+   :area :grammar
+   :target "yes/no and wh-questions"
+   :current "absent"
+   :status :absent
+   :score 0.0
+   :gap "No interrogative syntax or semantics."}
+  {:id :grammar-imperative
+   :area :grammar
+   :target "commands"
+   :current "absent in the sentence grammar; shell run/capture are a separate surface"
+   :status :absent
+   :score 0.0
+   :gap "No imperative sentence pattern."}
+  {:id :grammar-negation
+   :area :grammar
+   :target "not, no, never"
+   :current "sentence-initial no; not/never refused"
+   :status :partial
+   :score 0.4
+   :gap "No predicate negation."}
+  {:id :grammar-conditional
+   :area :grammar
+   :target "if/then, unless"
+   :current "when ... every ... transition"
+   :status :partial
+   :score 0.4
+   :gap "No if/unless; the transition is the only conditional shape."}
+  {:id :grammar-relative
+   :area :grammar
+   :target "who, which, that"
+   :current "that + condition disjunction"
+   :status :partial
+   :score 0.5
+   :gap "No verb-phrase relative; no who/which."}
+  {:id :grammar-coordination
+   :area :grammar
+   :target "NP, VP, and sentence coordination"
+   :current "condition conjunction/disjunction only"
+   :status :partial
+   :score 0.3
+   :gap "No NP/VP/sentence coordination."}
+  {:id :grammar-complement
+   :area :grammar
+   :target "that-clauses, infinitives, gerunds"
+   :current "absent"
+   :status :absent
+   :score 0.0
+   :gap "No complement clauses."}
+  {:id :grammar-passive
+   :area :grammar
+   :target "be + past participle"
+   :current "absent"
+   :status :absent
+   :score 0.0
+   :gap "No passive voice."}
+  {:id :grammar-modality
+   :area :grammar
+   :target "may, will, can, must"
+   :current "can is a FunctionName; some is existential; no modal semantics"
+   :status :partial
+   :score 0.2
+   :gap "No obligation, permission, or futurity."}
+
+  {:id :semantics-logical-form
+   :area :semantics
+   :target "Ogden's Basic English has no formal semantics"
+   :current "canonical logical form, emitter, SMT obligations"
+   :status :beyond-target
+   :gap "A strength relative to the target, not a coverage item."}
+  {:id :semantics-refusals
+   :area :semantics
+   :target "Ogden's Basic English is descriptive, not a refusal system"
+   :current "named refusals for every closed-class form"
+   :status :beyond-target
+   :gap "A strength relative to the target, not a coverage item."}
+
+  {:id :pragmatics-speech-acts
+   :area :pragmatics
+   :target "statements, questions, commands"
+   :current "statements and transitions; shell commands"
+   :status :partial
+   :score 0.5
+   :gap "No questions; commands are a separate shell surface."}
+  {:id :pragmatics-anaphora
+   :area :pragmatics
+   :target "pronouns and anaphora"
+   :current "refused; no antecedent resolution"
+   :status :refused
+   :score 0.0
+   :gap "No anaphora."}
+  {:id :pragmatics-discourse
+   :area :pragmatics
+   :target "connected discourse"
+   :current "transitions, decision tables, Discourse layer"
+   :status :partial
+   :score 0.4
+   :gap "No general discourse relations or coherence proof."}
+  {:id :orthography-punctuation
+   :area :orthography
+   :target "standard written punctuation and case"
+   :current "period, comma, colon, parentheses; lowercase names"
+   :status :partial
+   :score 0.5
+   :gap "A controlled written convention, not standard English case."}
+  {:id :orthography-vocabulary-governance
+   :area :orthography
+   :target "850-word list and defined technical terms"
+   :current "image-resident vocabulary; no core list"
+   :status :partial
+   :score 0.2
+   :gap "The mechanism exists; the list and governance do not."}]
+
+ :summary
+ {:method "Full = 1, Partial = the requirement's score, Absent/Refused = 0; Beyond-target is excluded from the weighted total."
+  :counts
+  {:requirements 32
+   :full 0
+   :partial 18
+   :absent 9
+   :refused 3
+   :beyond-target 2}
+  :weighted-total 0.255
+  :by-area
+  {:lexicon 0.33
+   :operators 0.37
+   :closed-class 0.275
+   :grammar 0.18
+   :pragmatics 0.30
+   :orthography 0.35}
+  :headline
+  "Current covers about 25% of the full Ogden target: 0% of the 850-word list, about 10% of the operator system, about 23% of the sentence-pattern subset, and 0% of morphology. It adds formal semantics and named refusals that Ogden does not have."}
+
+ :gaps
+ [{:priority 1
+   :gap "850-word core lexicon with categories and a coverage register"}
+  {:priority 2
+   :gap "The 18-operator system and its formal semantics"}
+  {:priority 3
+   :gap "Closed-class forms: pronouns, articles, prepositions, but/because, any"}
+  {:priority 4
+   :gap "Morphology: plural, -ing/-ed, -er/-est, -ly, un-"}
+  {:priority 5
+   :gap "Sentence patterns: questions, imperatives, complement clauses, passive, general coordination, verb-phrase relatives"}
+  {:priority 6
+   :gap "Modality: may, will, can, must with obligation/permission semantics"}
+  {:priority 7
+   :gap "Discourse and anaphora: pronoun resolution and connected discourse"}]
+
+ :next
+ [{:phase 0
+   :title "Coverage register"
+   :work "Create a checked EDN row per Ogden word, operator, pattern, and word-formation rule, with the current surface and a formal-semantics note."}
+  {:phase 1
+   :title "Lexicon and operators"
+   :work "Seed the 850-word list as an image vocabulary and define the 18 operators with typed semantics."}
+  {:phase 2
+   :title "Closed class"
+   :work "Add pronouns, articles, prepositions, but/because, and any, or keep explicit refusals with reasons."}
+  {:phase 3
+   :title "Sentence patterns and morphology"
+   :work "Add the missing patterns and the limited word formation; define each refusal boundary."}
+  {:phase 4
+   :title "Semantics and measurement"
+   :work "Extend the emitter and SMT obligations; refresh the coverage scores from the register."}]}

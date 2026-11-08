@@ -1,0 +1,496 @@
+; Scale type-system architecture, properties, and assessment.
+; Machine-readable specification. Status is per layer and per property.
+
+{:spec/id "scale-type-system"
+ :title "Scale type-system architecture and properties"
+ :plan "docs/types/row-typing-plan.edn"
+ :date "2026-11-06"
+ :status :implemented-with-deferred
+
+ :scope
+ {:covers ["verification lattice"
+           "domain expression sorts"
+           "SMT encoding"
+           "runtime set-theoretic sorts"
+           "row types"
+           "record types"
+           "effect types"
+           "field access"
+           "static type retrieval and kinded unification"
+           "runtime shapes and dispatch"
+           "kernel image execution"]
+  :excludes ["a full formal proof of the implementation"
+             "a proof assistant or generated verification artifacts"]
+  :deferred ["the general typed handler expression"
+             "second-class blocks"
+             "self-typing"]}
+
+ :layers
+ [{:id :verification-lattice
+   :name "Verification type lattice (D25)"
+   :kind :host-data
+   :status :implemented
+   :modules ["components/verification/typing/type-lattice.fs"
+             "components/verification/typing/domain-expression.fs"
+             "components/core/scale-file.fs"]
+   :purpose "One finite or symbolic coordinate system shared by Z3, Hedgehog, the refiner, and the emitter."
+   :representation
+   {:field "{ Name: string; Type: FieldType; Coordinates: FieldValue list option; Narrowing: RefinementGuard list }"
+    :lattice "{ Fields: Field list }"
+    :visibility "public immutable records"
+    :pure-values true
+    :checked-by "create, ofFieldTypes, applyGuard, withGuards, product, validate"}
+   :readers ["Smt" "Hedgehog generators" "Refiner" "Emitter" "DecisionTable via ofFieldTypes"]
+   :source-of-truth "the .scale document; the lattice is derived and not persisted"}
+  {:id :domain-expression
+   :name "Domain expression and SMT sorts"
+   :kind :host-data
+   :status :implemented
+   :modules ["components/verification/typing/domain-expression.fs"
+             "components/verification/typing/smt.fs"]
+   :field-types ["BooleanType" "IntegerType" "NaturalType" "RealType"]
+   :smt-theories ["QF_LIA" "QF_LRA" "QF_LIRA"]
+   :purpose "A tiny verifiable expression language with an interpreter and a Z3 encoding."}
+  {:id :runtime-sorts
+   :name "Set-theoretic runtime sorts (D12/D14)"
+   :kind :image-data
+   :status :implemented
+   :modules ["components/prelude/evaluator/value-sets.fs"
+             "components/prelude/evaluator/signatures.fs"]
+   :representation "ValueSet = (option Name, Extension); membership is structural"
+   :operations ["union" "intersect" "except" "subset" "complement" "nor" "member" "same-name" "same-shape" "seal" "unname"]
+   :purpose "Nominal and structural readings of one value set, selected per comparison site."}
+  {:id :static-types
+   :name "Static type retrieval and kinded unification (P4)"
+   :kind :host-data
+   :status :implemented-with-deferred
+   :modules ["components/verification/typing/type-retrieval.fs"
+             "components/verification/typing/row-types.fs"
+             "components/verification/typing/label-sets.fs"
+             "components/verification/typing/record-types.fs"
+             "components/verification/typing/unification.fs"
+             "components/verification/typing/unification-host.fs"]
+   :terms ["Variable" "Primitive" "Sort" "Record of open field row" "Function of parameters, result, effects"]
+   :kinds ["type" "row" "set"]
+   :purpose "Elaborate Scale expressions and books without executing them."}
+  {:id :runtime-shapes
+   :name "Nominal shapes, kinds, classes, and dispatch"
+   :kind :image-data
+   :status :implemented
+   :modules ["components/core/prose-parser.fs"
+             "components/prelude/evaluator/pattern.fs"
+             "components/prelude/evaluator/dispatch.fs"]
+   :purpose "Runtime construction and pattern matching over nominal shapes; generic dispatch selects by shape."}
+  {:id :smt-theory
+   :name "SMT encoding"
+   :kind :host-data
+   :status :implemented
+   :modules ["components/verification/typing/smt.fs"]
+   :purpose "Encode the verification lattice and guards into Z3; report a four-way outcome, never treat UNKNOWN as a pass."}]
+
+ :kernel-image
+ {:status :external-to-this-spec
+  :modules ["components/kernel/prelude-image.fs"
+            "components/kernel/lowered-abstraction.fs"
+            "components/core/runtime-types.fs"]
+  :trust-boundary "the kernel image is append-only; execution state is re-threaded, never serialized"
+  :note "this specification references the image boundary but does not specify the image schema or instruction set"}
+
+ :architecture
+ {:direction
+  ["DomainExpression -> TypeLattice -> Smt"
+   "DomainExpression -> TypeLattice -> Hedgehog generators"
+   "TypeLattice -> Refiner -> ScaleFile write-back"
+   "TypeLattice -> Emitter -> F# and SMT artifacts"
+   "ScaleFile document -> TypeLattice projection"
+   "ProseParser -> TypeRetrieval -> BookRunner check"
+   "TypeRetrieval -> RowTypes, LabelSets, RecordTypes"
+   "Unification -> RowTypes, LabelSets, RecordTypes"
+   "UnificationHost -> TypeRetrieval and Unification"
+   "ProseParser -> Lowering -> kernel image"
+   "runtime shapes -> pattern and dispatch"]
+  :non-edges
+  ["TypeLattice does not read TypeRetrieval"
+   "TypeRetrieval does not read TypeLattice"
+   "TypeLattice does not read the runtime ValueSet sort"
+   "runtime ValueSet does not read TypeLattice"
+   "runtime shapes are not static Record types"
+   "Unification is a reference model; the host adapter covers only the closed fragment"]
+  :trust-boundaries
+  ["the .scale document is the editable source of truth"
+   "the lattice is a derived projection and is not persisted"
+   "emitted F# and SMT refuse a lattice narrowing the document lacks"
+   "the kernel image is append-only; execution state is re-threaded, never serialized"
+   "static types are elaboration facts, not runtime tags"]}
+
+ :verification-lattice
+ {:status :implemented
+  :data
+  {:field "Name, FieldType, optional finite Coordinates, Narrowing guards"
+   :lattice "ordered Field list"
+   :pure-values true
+   :visibility "public immutable records"
+   :validation "validate checks names, duplicates, coordinates, sort alignment, thresholds, and guards"}
+  :operations
+  ["create" "ofFieldTypes" "applyGuard" "applyGuardWithResolver" "withGuards" "validate"
+   "validateField" "product" "coordinatesAfterNarrowing" "assignments" "constraints"
+   "candidateGuards" "generator" "universe" "guardHoldsValue"]
+  :composition
+  {:product {:status :implemented
+             :rule "concatenate fields; validate; refuse duplicate names"
+             :evidence "TypeLattice.product; property lattice-product-composes"}
+   :sum {:status :data-only
+         :property "L11"
+         :rule "a tagged union has no reader semantics yet; it is not executable"
+         :reason "Z3, Hedgehog, and the refiner need a tagged-union encoding before sum can run"}}
+  :serialization
+  {:status :implemented
+   :format "JSON schema 1"
+   :operations ["toJson" "ofJson"]
+   :rule "canonical field order; ofJson validates the decoded lattice before returning"}
+  :guarantees
+  [{:property "L1" :summary "a pure value validates only with names, sort-aligned coordinates, and admissible guards"}
+   {:property "L2" :summary "a finite field is nonempty"}
+   {:property "L3" :summary "a numeric coordinate or threshold is representable on its sort"}
+   {:property "L4" :summary "narrowing is monotone and idempotent"}
+   {:property "L5" :summary "product composition concatenates and validates; duplicate names are refused"}
+   {:property "L6" :summary "constraints are distinct narrowing guards"}
+   {:property "L7" :summary "a lattice narrowing the document lacks is refused at emit"}
+   {:property "L8" :summary "a symbolic field is refused by a finite generator, never sampled as empty"}
+   {:property "L9" :summary "a named guard without a resolver is undecided or refused"}
+   {:property "L10" :summary "direct construction must call validate before a reader"}
+   {:property "L11" :summary "sum composition is data-shaped only and refused at execution"}]
+  :properties ["L1" "L2" "L3" "L4" "L5" "L6" "L7" "L8" "L9" "L10" "L11"]
+  :limits
+  ["no sum execution"
+   "no user-defined FieldType"
+   "no region algebra, meet/join, minimal-region search, or residual computation"
+   "no conjunction/negation/nominal guard forms"
+   "no invariants, lemmas, induction, or proof log"
+   "no D12 runtime-sort bridge"
+   "no image-resident lattice or macro expansion"]}
+
+ :row-types
+ {:module "RowTypes"
+  :status :implemented
+  :term "Empty | Extend of label * Row | Variable of RowVariable"
+  :labels "labels compare as a set; order is presentation only"
+  :variables "RowVariable is nominal and cannot meet a SetVariable"
+  :unification
+  ["closed rows with the same labels unify"
+   "an open row absorbs the other side's labels"
+   "two open rows meet at a fresh common tail"
+   "occurs check prevents a cyclic row"
+   "duplicate labels are refused"]
+  :uses ["Unification.Record uses Row<RecordField<TypeTerm>>"
+         "TypeRetrieval.Type.Record uses Row<RecordField<Type>>"
+         "Scheme.QuantifiedRows generalizes and instantiates row variables"]
+  :coherence
+  {:rule "the two record representations share RecordField name equality and row semantics"
+   :host "TypeRetrieval.Type.Record is the production representation"
+   :reference "Unification.Record is the reference model"
+   :non-edge "neither module reads the other; UnificationHost is the only closed-fragment bridge"
+   :evidence "the same label/payload rules are tested in both models"}
+  :properties ["R1" "R2" "R3" "R4"]
+  :lacks
+  {:status :implemented
+   :module "RowTypes.RowLacks"
+   :rule "a row variable cannot bind a row containing a label it lacks; the constraint propagates to every free tail"
+   :evidence "row lacks checks"}
+  :limits ["no surface row syntax"
+           "no row-polymorphic variants or tuples"
+           "no row/effect interaction"]}
+
+ :record-types
+ {:module "RecordTypes"
+  :status :implemented
+  :field "RecordField<'fieldType> = { Name: string; Type: 'fieldType }"
+  :label-equality "name only; the payload is not part of label identity"
+  :open-records
+  {:status :implemented
+   :unification "common payloads unify with the type unifier; an open tail absorbs fields with payloads"
+   :quantification "Scheme.QuantifiedRows; instantiate freshens row variables"}
+  :host
+  {:type "TypeRetrieval.Type.Record of Row<RecordField<Type>>"
+   :state "InferenceState.RecordRows and NextRow"
+   :shape-inference "a Message of a declared shape infers a closed row"}
+  :field-access
+  {:surface "field(\"name\" record)"
+   :typing "projects a present field; extends an open row; refuses a closed row without the field"
+   :runtime "book host word using the declared shape field order"
+   :limits ["text-literal names only" "book-only runtime" "no update or nested projection"]}
+  :coherence
+  {:host "TypeRetrieval.Type.Record"
+   :reference "Unification.Record"
+   :rule "RecordField name equality is shared; payloads are unified by the respective type unifier"
+   :non-edge "no direct conversion outside UnificationHost"}
+  :properties ["S4" "S7"]
+  :limits ["no open-record update"
+           "no payload-aware lacks constraints"
+           "no surface record projection outside the book host word"]}
+
+ :effect-types
+ {:module "LabelSets"
+  :status :implemented
+  :term "Closed of labels | Open of known labels and SetVariable"
+  :unification "closed sets by equality; an open set absorbs; two open sets meet at a fresh unknown"
+  :subtraction
+  {:closed {:status :implemented
+            :canonical "LabelSets.subtractClosed"
+            :host-wrapper "TypeRetrieval.subtractEffect"
+            :rule "remove known labels from a closed set; the host wrapper calls the canonical operation"
+            :evidence "LabelSets.subtractClosed; TypeRetrieval.subtractEffect; property labelSetSubtractionIsSetDifference"}
+   :open {:status :implemented
+          :canonical "LabelSets.subtractOpen"
+          :host-wrapper "TypeRetrieval.subtractEffectWithLacks"
+          :rule "remove known labels and add a lacks constraint to the open remainder; a later binding containing a lacked label is refused"
+          :evidence "LabelSets.subtractOpen; TypeRetrieval.subtractEffectWithLacks; host effect lacks checks"}}
+  :schemes
+  {:quantifies ["SetVariable"]
+   :lacks "quantified effect variables retain their lacks constraints; instantiateWithLacks restores them"
+   :instantiate "freshens effect variables; word signatures can quantify them"}
+  :properties ["S5" "S6" "S8"]
+   :limits ["no general handlers"
+            "effect rows use the open-label-set representation"
+            "closed subtyping is accepted for application arguments and branch joins"]}
+
+ :handlers
+ {:status :implemented-with-deferred
+  :effect-subtraction "closed and open subtraction are implemented; the with-handler inference rule consumes open subtraction and carries its lacks constraint"
+  :runtime "the existing with-handler and signal form a shallow one-shot handler over quotations"
+  :typed-surface "quotations carry Code(result, effects); with-handler accepts general code values; a general handler expression and effect-label matching are deferred"
+  :target "shallow one-shot first; deep multi-shot and second-class blocks are gated"
+  :limits ["no resume or multi-shot"
+           "no explicit effect-label matching in the type system"
+           "no second-class blocks"]}
+
+ :runtime-sorts
+ {:representation "ValueSet = (option Name, Extension)"
+  :projections {:nominal "compare by Name" :structural "compare by Extension"}
+  :properties ["V1" "V2" "V3" "V4" "V5"]}
+
+ :runtime-shapes
+ {:properties ["K1" "K2" "K3" "K4" "K5"]}
+
+ :static-types
+ {:terms
+  {:type ["Variable" "Primitive" "Sort" "Record of open field row" "Function of parameters, result, effects"]
+   :row ["Empty" "Extend of label and rest" "Variable of RowVariable"]
+   :set ["Closed of labels" "Open of known labels and SetVariable"]
+   :record-field "RecordField { Name; Type }; label equality compares Name only"}
+  :schemes
+  {:quantifies ["TypeVariable" "SetVariable" "RowVariable"]
+   :lacks "quantified effect and row variables retain their lacks constraints; instantiateWithLacks restores them"
+   :instantiate "freshens all three; counters avoid self-binding"}
+  :unification
+  {:dispatcher "unifyType, unifyRow, unifySet, unifyKinded"
+   :kinds "type, row, set; no cross-kind binding"
+   :records "common field payloads unify; an open tail absorbs fields with payloads"
+   :effects "closed or open set expressions; function unification uses the set unifier"
+   :contextual "call-site effect union; word signatures can quantify effect variables"}
+  :field-access
+  {:surface "field(\"name\" record)"
+   :typing "projects a present field; extends an open row; refuses a closed row without the field"
+   :runtime "book host word using the declared shape field order"}
+  :properties ["S1" "S2" "S3" "S4" "S5" "S6" "S7" "S8"]
+  :limits ["the host unify wrapper returns only type substitutions; use unifyWith for effect/row state"
+           "a general typed handler expression is not landed"
+           "no deep multi-shot handlers or second-class blocks"
+           "no full self-typing"
+           "no bridge to the verification lattice or runtime sorts"]}
+
+ :execution-model
+ {:effects
+  {:status :implemented-with-deferred
+   :representation "LabelSet<string> = Closed(labels) | Open(known, SetVariable)"
+   :inference "functions carry latent effects; calls union through set unification; schemes quantify SetVariable"
+   :purity "tracked for the inferred fragment and declared signatures; not a global purity guarantee"
+   :subtraction {:closed :implemented :open :implemented}
+   :handlers {:status :implemented-with-deferred
+              :runtime "shallow one-shot with-handler/signal over quotations"
+              :typed "the with-handler quotation form subtracts failure and carries open lacks"}
+   :effect-rows :open-label-sets
+   :effectful-edges ["console" "shell run/capture" "host-call" "transport" "actor/channel"]
+   :primitives
+    {:inferred ["add" "subtract" "multiply" "divide" "lessThan" "greaterThan" "equals" "print" "spawn" "self" "send" "receive" "channel" "link" "monitor"]
+     :not-inferred ["stack" "control" "pattern" "declaration"]}}
+  :composition
+  {:modules "static image units and groups"
+   :cycles "refused by image validation at scale_init or scale_image(ImageImport)"
+   :boundaries "exports, imports, and capabilities; host-call and transport are host boundaries"
+   :dynamic-loading "no in-language loader; host-driven image replacement only"
+   :lifecycle "no component init/dispose; kernel handle init/free and actor supervision"}
+  :resources
+  {:linearity {:status :implemented
+               :modes ["ExactlyOnce" "AtMostOnce" "AnyNumberOfTimes"]
+               :operations ["own" "borrow" "consume" "release"]
+               :scope "quotation-trace checker; not wired into P4"
+               :undecided "an unmodelled word makes the trace Undecided, never Linear"}
+   :bracket :absent
+   :raii :absent
+   :persistence "append-only image; rollback and bookmarks; snapshot, not event sourcing"}
+  :state
+  {:model "pure state threading; execution state is never serialized"
+   :stm :absent
+   :mutable-slots "instance slots are mutable via set-slot-value; a write appends a state entry and re-threads the root"
+   :shared-mutable-state "no general shared-mutable-state model; instance slots are the exception"
+   :actors "mailboxes, channels, links, monitors, and supervision; actor state is execution state"
+   :hot-reload "host-driven image replacement; the image is the hot-reload boundary; live programming is not specified"}
+  :deployment
+  {:shape "long-running host process with a changing image set; batch and embedded NativeAOT"
+   :handles "each scale_init creates an independent handle and image; multiple handles may coexist"
+   :multi-tenancy :unspecified
+   :self-modification "Scale code cannot change its capability surface; a host image import can"}}
+
+ :properties
+ {:ownership-convention "static-types is the canonical owner of S-properties; sub-sections re-cite relevant IDs; L is host lattice; R is both host and reference; V and K are runtime"
+  :verification-lattice
+  [{:id "L1" :owner :host :statement "A pure lattice value validates only when every field has a name, a sort-aligned coordinate set, and admissible guards." :evidence "TypeLattice.validate; pure-lattice tests"}
+   {:id "L2" :owner :host :statement "A finite field has at least one coordinate; an empty finite field is refused before a generator is built." :evidence "TypeLattice.create/applyGuard; generator refusals"}
+   {:id "L3" :owner :host :statement "A numeric coordinate or threshold is representable on its sort; integer and natural values are integral and Int32-bounded." :evidence "DomainExpression.integerValue/naturalValue; TypeLattice.validateThreshold"}
+   {:id "L4" :owner :host :statement "Narrowing is monotone and idempotent." :evidence "TypeLattice.applyGuard; withGuards; tests"}
+   {:id "L5" :owner :host :statement "Product composition concatenates fields and validates; duplicate field names are refused." :evidence "TypeLattice.product; property lattice-product-composes"}
+   {:id "L6" :owner :host :statement "Constraints are the distinct narrowing guards in field order; the document guard is not conjoined twice." :evidence "TypeLattice.constraints; Smt.precondition; emitter tests"}
+   {:id "L7" :owner :host :statement "The emitter refuses a lattice narrowing that the document does not carry." :evidence "Emitter.emitFSharp/emitSmt divergence checks"}
+   {:id "L8" :owner :host :statement "A symbolic field can feed Z3 but not a finite generator or exhaustive refiner; the refusal is named." :evidence "coordinatesAfterNarrowing; candidateGuards; refiner tests"}
+   {:id "L9" :owner :host :statement "A named guard without a resolver is undecided or refused, never silently false." :evidence "GuardResolver; D41 tests"}
+   {:id "L10" :owner :host :statement "The lattice is a pure value; direct construction must call validate before a reader." :evidence "public Field/Lattice; validate; pure-lattice tests"}
+   {:id "L11" :owner :host :statement "Sum composition is data-shaped only; execution is refused until a tagged-union reader semantics exists." :evidence "TypeLattice.composition; refusal list; no sum execution"}]
+  :row-types
+  [{:id "R1" :owner :both :statement "Closed rows with the same labels unify; different closed labels are refused." :evidence "RowTypes tests"}
+   {:id "R2" :owner :both :statement "An open row absorbs the other side's labels." :evidence "RowTypes tests"}
+   {:id "R3" :owner :both :statement "Two open rows meet at a fresh common tail." :evidence "RowTypes tests"}
+   {:id "R4" :owner :both :statement "A row variable cannot occur in itself; duplicate labels are refused." :evidence "RowTypes tests"}]
+  :static-types
+  [{:id "S1" :owner :both :statement "Occurs-check prevents a cyclic type or row." :evidence "TypeRetrieval/Unification occurs checks"}
+   {:id "S2" :owner :reference :statement "No unifier binds a variable of one kind to a term of another kind." :evidence "unifyKinded KindMismatch; kind tests"}
+   {:id "S3" :owner :reference :statement "A row and a set never unify, even with identical labels." :evidence "kind dispatch tests"}
+   {:id "S4" :owner :both :statement "Record labels compare by name; common payloads unify; open tails absorb fields with payloads." :evidence "host and kinded record tests"}
+   {:id "S5" :owner :both :statement "Schemes quantify type, effect, and row variables; instantiation freshens all three." :evidence "scheme tests"}
+   {:id "S6" :owner :both :statement "An open effect set binds to concrete effects; two open sets meet at a fresh unknown." :evidence "effect-polymorphism tests"}
+   {:id "S7" :owner :host :statement "Field access on an open record projects or extends the row; a missing closed field is refused." :evidence "field-access tests"}
+   {:id "S8" :owner :host :statement "Effect subtraction removes a known label from a closed set and refuses an open remainder." :evidence "effect-subtraction tests; property labelSetSubtractionIsSetDifference"}]
+  :runtime-sorts
+  [{:id "V1" :owner :image :statement "Membership is structural over tensor values." :evidence "value-set membership tests"}
+   {:id "V2" :owner :image :statement "Set algebra is union, intersection, complement over an explicit universe." :evidence "set-algebra properties"}
+   {:id "V3" :owner :image :statement "Sealing narrows toward nominal equality; unname widens toward structural equality." :evidence "seal/unname tests"}
+   {:id "V4" :owner :image :statement "There is no multiplicity and no order." :evidence "value-set tests"}
+   {:id "V5" :owner :image :statement "The runtime sort is not the verification lattice; the bridge is deferred." :evidence "non-edge; deferred list"}]
+  :runtime-shapes
+  [{:id "K1" :owner :image :statement "A shape is a nominal compound: a head name and ordered fields." :evidence "shape construction tests"}
+   {:id "K2" :owner :image :statement "Pattern matching destructures by declared field order." :evidence "pattern tests"}
+   {:id "K3" :owner :image :statement "Generic dispatch selects an exact shape vector; a missing method is a named refusal." :evidence "dispatch tests"}
+   {:id "K4" :owner :image :statement "Runtime shapes are not static open records." :evidence "non-edge"}
+   {:id "K5" :owner :image :statement "A shape value does not carry field names; field access uses the book shape table." :evidence "field-access tests"}]}
+
+ :formal-verification
+ {:smt
+  {:status :implemented
+   :scope "verification lattice guards and obligations"
+   :rule "UNKNOWN is reported, never treated as a pass; contexts and solvers are disposed"}
+  :hedgehog
+  {:status :implemented
+   :scope "runtime sorts, runtime shapes, lattice properties, lattice serialization, effect subtraction, and interpreter properties"
+   :rule "a failing property prints a recheck seed and a shrunk counterexample"}
+  :structural
+  {:status :implemented
+   :parser "tools/type-system-check.fsx"
+   :subset "maps, vectors, strings, keywords, numbers, booleans, symbols, and semicolon comments"
+   :scope "the EDN-like specification itself"
+   :rule "required layers, architecture edges, property ids, owners, pure-value flags, counts, and absence of retired artifacts"}
+  :limits
+  ["no full formal proof of the implementation"
+   "no proof assistant or generated specification"
+   "SMT verifies guards and obligations, not the entire type system"
+   "the EDN check is structural, not semantic"]}
+
+ :test-strategy
+ {:property
+  ["lattice product composition validates and preserves field order"
+   "a checked lattice constructor validates"
+   "a lattice data document round-trips"
+   "effect subtraction is set difference on closed label sets"
+   "set algebra agrees with union/intersection/complement"
+   "unifier occurs-check and kind separation"
+   "scheme instantiation freshens type/effect/row variables"
+   "record payload absorption and open-row projection"
+   "row lacks refuses a lacked label"]
+  :integration
+  ["lattice through Z3, Hedgehog, refiner, and emitter"
+   "book check and cast for field access"
+   "decision table through ofFieldTypes"
+   "a composed lattice reaches the SMT reader"]
+  :snapshot
+  ["emitted SMT and F# artifacts"
+   "image JSON and instruction snapshots"
+   "diagnostic and line-count snapshots"
+   "not used for semantic handler behavior"]
+  :current
+  {:checks 1741
+   :examples 1683
+   :hedgehog-properties 58
+   :spec-properties 33
+   :granular-cases 36
+   :granular-detail "13 snapshots, 14 integrations, 9 writer checks"
+   :discovered-tests 100
+   :arithmetic "1741 = 1683 examples + 58 Hedgehog properties; the 33 spec properties are L1-L11, R1-R4, S1-S8, V1-V5, K1-K5"
+   :note "the typed handler slice is not included in this count"}}
+
+ :assessment
+ {:scope "pure-value refactor of the verification lattice"
+  :feasibility
+  {:verdict :feasible
+   :reasons ["the lattice is already immutable host data"
+             "public records and validate are a small, local change"
+             "product composition is a pure concatenation plus validation"
+             "the readers continue to consume the same validated shape"]
+   :risks ["direct construction bypasses validation unless callers call validate"
+           "sum composition needs reader semantics before it can execute"]}
+  :realisticness
+  {:verdict :realistic-for-host-tooling
+   :reasons ["the refactor preserves the D25 readers and pinned artifacts"
+             "pure values are directly inspectable and transformable by F# tooling"
+             "the change is tested by examples, a property, and an integration check"]
+   :limits ["it is not image-resident"
+            "it is not a macro surface"
+            "it does not bridge to runtime sorts or static types"
+            "public construction makes validate a caller obligation"]}
+  :practicability
+  {:verdict :practicable-for-inspection-composition-and-serialization
+   :reasons ["host tools can inspect and compose lattices without private access"
+             "product is usable immediately"
+             "validate gives a checked boundary for transformed values"
+             "a canonical data document round-trips through a checked reader"]
+   :not-yet-practicable ["sum-reader semantics"
+                         "D12/P4 bridges"]}}
+
+ :refusals
+ {:verification
+  ["empty field name" "duplicate field name" "empty finite coordinates" "coordinate of the wrong sort"
+   "non-representable threshold" "guard of the wrong field or sort" "guard that empties a finite field"
+   "symbolic field in a finite generator" "named guard without a resolver" "sum lattice execution"]
+  :static
+  ["OccursCheck" "TypeMismatch" "ArityMismatch" "EffectMismatch" "EffectOccursCheck"
+   "EffectSubtractionOpen" "RowOccursCheck" "RowLacksViolation" "DuplicateLabel" "UnknownField" "KindMismatch"
+   "UnknownWord" "AmbiguousWord" "UnsupportedExpression"]}
+
+ :deferred
+ ["sum lattice execution"
+  "user-defined lattices and lattice composition beyond product"
+  "image-resident lattice values and macro transformation"
+  "D25 <-> D12 runtime-sort bridge"
+  "D25 <-> P4 static-type bridge"
+  "general typed handler expression"
+  "deep multi-shot handlers and second-class blocks"
+  "full self-typing"]
+
+ :evidence
+ {:lattice ["docs/types/type-lattice.typ" "components/verification/typing/type-lattice.fs"]
+  :rows ["docs/types/row-and-set-types.typ" "components/verification/typing/row-types.fs"]
+  :records ["docs/types/row-and-set-types.typ" "components/verification/typing/record-types.fs"]
+  :effects ["docs/types/effect-polymorphism.typ" "components/verification/typing/label-sets.fs"]
+  :field-access ["docs/language/action/field-access.typ" "components/verification/typing/type-retrieval.fs"]
+  :runtime-sorts ["docs/types/set-theoretic-typing.typ" "components/prelude/evaluator/value-sets.fs"]
+  :static ["docs/types/type-inference.typ" "components/verification/typing/unification.fs"]
+  :execution ["docs/specification.typ#22" "components/kernel/abi.fs" "components/core/ownership-types.fs"]
+  :tests ["components/verification/tests/tests.fs" "components/verification/tests/properties.fs"]}}

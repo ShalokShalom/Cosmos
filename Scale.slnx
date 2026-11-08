@@ -1,0 +1,4 @@
+<Solution>
+  <Project Path="bases/scale-cli/scale.fsproj" />
+  <Project Path="projects/scale-tests/scale-tests.fsproj" />
+</Solution>

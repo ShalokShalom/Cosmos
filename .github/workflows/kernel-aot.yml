@@ -1,0 +1,32 @@
+name: Kernel AOT
+
+on:
+  push:
+    paths:
+      - "components/kernel/**"
+      - "components/adapter-c/**"
+  pull_request:
+    paths:
+      - "components/kernel/**"
+      - "components/adapter-c/**"
+
+jobs:
+  kernel-aot:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.x
+
+      - uses: extractions/setup-just@v2
+
+      # NativeAOT needs clang and zlib; the conformance harness needs a C
+      # compiler and dlopen. This is the gate that turns a kernel change into a
+      # real native artifact before it can merge.
+      - name: Install NativeAOT and C dependencies
+        run: sudo apt-get update && sudo apt-get install -y clang zlib1g-dev
+
+      - name: Publish the kernel and run the C conformance harness
+        run: just kernel-aot linux-x64

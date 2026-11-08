@@ -1,0 +1,21 @@
+[Unit]
+Description=Scale Vestige MCP HTTP server
+Documentation=file:%h/Projects/Scale/docs/start/glossary.typ
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=%h/Projects/Scale
+Environment=VESTIGE_HTTP_ENABLED=1
+Environment=VESTIGE_HTTP_PORT=3928
+EnvironmentFile=-%h/.config/scale/vestige.env
+ExecStart=/usr/bin/bash %h/Projects/Scale/tools/script/run-vestige-http.sh
+Restart=on-failure
+RestartSec=2
+KillMode=control-group
+TimeoutStopSec=10
+UMask=0077
+
+[Install]
+WantedBy=default.target

@@ -1,0 +1,8 @@
+<Project>
+  <PropertyGroup>
+    <!-- The vendored Nu engine is an external Polylith node with its own
+         package pins; the Scale workspace's central package management does
+         not apply inside it. -->
+    <ManagePackageVersionsCentrally>false</ManagePackageVersionsCentrally>
+  </PropertyGroup>
+</Project>

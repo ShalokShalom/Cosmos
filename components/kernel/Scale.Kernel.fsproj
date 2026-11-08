@@ -1,0 +1,35 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Library</OutputType>
+    <TargetFramework>net10.0</TargetFramework>
+    <RootNamespace>Scale.Kernel</RootNamespace>
+    <PublishAot>true</PublishAot>
+    <NativeLib>Shared</NativeLib>
+    <IlcGenerateCompleteTypeMetadata>true</IlcGenerateCompleteTypeMetadata>
+    <IlcTrimMetadata>false</IlcTrimMetadata>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="FSharp.Core" />
+  </ItemGroup>
+  <ItemGroup>
+    <Compile Include="types.fs" />
+    <Compile Include="wire-core.fs" />
+    <Compile Include="host-token-wire.fs" />
+    <Compile Include="tensor.fs" />
+    <Compile Include="index-transformation.fs" />
+    <Compile Include="lexicon.fs" />
+    <Compile Include="store.fs" />
+    <Compile Include="scalar-read.fs" />
+    <Compile Include="stack.fs" />
+    <Compile Include="lowered-instructions.fs" />
+    <Compile Include="symbolic-abstraction.fs" />
+    <Compile Include="term-portable.fs" />
+    <Compile Include="term-verification.fs" />
+    <Compile Include="kernel-state.fs" />
+    <Compile Include="prelude-image.fs" />
+    <Compile Include="lowered-abstraction.fs" />
+    <Compile Include="primitive-wire.fs" />
+    <Compile Include="prelude-execution.fs" />
+    <Compile Include="abi.fs" />
+  </ItemGroup>
+</Project>

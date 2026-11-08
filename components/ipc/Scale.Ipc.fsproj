@@ -1,0 +1,20 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Library</OutputType>
+    <TargetFramework>net10.0</TargetFramework>
+    <RootNamespace>Scale</RootNamespace>
+  </PropertyGroup>
+  <ItemGroup>
+    <Compile Include="wire.fs" />
+    <Compile Include="classification.fs" />
+    <Compile Include="host-resources.fs" />
+    <Compile Include="declarative-io-executor.fs" />
+    <Compile Include="actor-host.fs" />
+    <Compile Include="language-transport.fs" />
+  </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="../core/Scale.Core.fsproj" />
+    <ProjectReference Include="../prelude/Scale.Prelude.fsproj" />
+    <ProjectReference Include="../kernel/Scale.Kernel.fsproj" />
+  </ItemGroup>
+</Project>

@@ -1,0 +1,34 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+
+	<PropertyGroup>
+		<TargetFramework>net10.0</TargetFramework>
+	</PropertyGroup>
+
+    <Import Project="../../Nu/Nu.targets" />
+
+	<ItemGroup>
+        <None Include="Assets\*" />
+        <None Include="Assets\*\*" />
+		<Compile Include="NUnit.fs" />
+		<Compile Include="TestPlugin.fs" />
+		<Compile Include="AddressTests.fs" />
+		<Compile Include="CoroutineTests.fs" />
+		<Compile Include="QuadtreeTests.fs" />
+		<Compile Include="OctreeTests.fs" />
+		<Compile Include="FluidEmitterTests.fs" />
+		<Compile Include="WorldTests.fs" />
+		<Compile Include="TraversalInterpolatedFacetTests.fs" />
+        <None Include="AssetGraph.nuag" />
+        <None Include="Overlayer.nuol" />
+		<None Include="App.config" />
+	</ItemGroup>
+
+	<ItemGroup>
+		<PackageReference Include="FsCheck" Version="2.16.6" />
+		<PackageReference Include="FsCheck.NUnit" Version="2.16.6" />
+		<PackageReference Include="Microsoft.NET.Test.Sdk" Version="18.0.1" />
+		<PackageReference Include="NUnit" Version="3.14.0" />
+		<PackageReference Include="NUnit3TestAdapter" Version="4.5.0" />
+	</ItemGroup>
+
+</Project>

@@ -1,0 +1,46 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Library</OutputType>
+    <TargetFramework>net10.0</TargetFramework>
+    <RootNamespace>Scale</RootNamespace>
+  </PropertyGroup>
+  <ItemGroup>
+    <Compile Include="runtime-types.fs" />
+    <Compile Include="host-words.fs" />
+    <Compile Include="channel-store.fs" />
+    <Compile Include="epoch.fs" />
+    <Compile Include="image-types.fs" />
+    <Compile Include="pattern-logic.fs" />
+    <Compile Include="question-logic.fs" />
+    <Compile Include="question-parser.fs" />
+    <Compile Include="question-engine.fs" />
+    <Compile Include="pattern-host.fs" />
+    <Compile Include="pattern-elaboration.fs" />
+    <Compile Include="pattern-analysis.fs" />
+    <Compile Include="portable-json.fs" />
+    <Compile Include="pattern-portable.fs" />
+    <Compile Include="expression-logic.fs" />
+    <Compile Include="prose-parser.fs" />
+    <Compile Include="expression-portable.fs" />
+    <Compile Include="package-logic.fs" />
+    <Compile Include="package-portable.fs" />
+    <Compile Include="fsharp-abstraction.fs" />
+    <Compile Include="arena.fs" />
+    <Compile Include="reclaim.fs" />
+    <Compile Include="vocabulary.fs" />
+    <Compile Include="vocabulary-in-image.fs" />
+    <Compile Include="persistence.fs" />
+    <Compile Include="vocabulary-list.fs" />
+    <Compile Include="tokenizer.fs" />
+    <Compile Include="ownership-types.fs" />
+    <Compile Include="parser.fs" />
+    <Compile Include="scale-file.fs" />
+    <Compile Include="path-policy.fs" />
+    <Compile Include="host-policy.fs" />
+    <Compile Include="declarative-io.fs" />
+    <Compile Include="declarative-io-policy.fs" />
+  </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="../kernel/Scale.Kernel.fsproj" />
+  </ItemGroup>
+</Project>

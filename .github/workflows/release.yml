@@ -1,0 +1,125 @@
+name: Release
+
+on:
+  release:
+    types: [published]
+
+permissions:
+  contents: write
+
+jobs:
+  native:
+    name: NativeAOT ${{ matrix.rid }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - rid: linux-x64
+            os: ubuntu-latest
+            binary: scale
+            archive: scale-linux-x64.tar.gz
+          - rid: win-x64
+            os: windows-latest
+            binary: scale.exe
+            archive: scale-win-x64.zip
+          - rid: osx-x64
+            os: macos-13
+            binary: scale
+            archive: scale-osx-x64.tar.gz
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.x
+
+      - name: Restore local tools
+        run: dotnet tool restore
+
+      - uses: extractions/setup-just@v2
+
+      - name: Check the workspace and the docs
+        run: |
+          just poly-check
+          just docs-check
+
+      - name: Compile the C adapter and conformance harness (Linux)
+        if: runner.os == 'Linux'
+        run: just conformance-check
+
+      - name: Install NativeAOT and Z3 dependencies (Linux)
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y clang zlib1g-dev libz3-dev
+
+      - name: Install Z3 (macOS)
+        if: runner.os == 'macOS'
+        run: brew install z3
+
+      # The release gate runs before anything is published: a revision that
+      # does not pass the complete check is never attached to a release.
+      - name: Check formatting
+        run: dotnet fantomas check .
+
+      - name: Build the product and the test deployable
+        run: |
+          dotnet build bases/scale-cli/scale.fsproj
+          dotnet build projects/scale-tests/scale-tests.fsproj
+
+      - name: Freshness (the build must match the files)
+        run: dotnet fsi tools/freshness-check.fsx
+
+      - name: Test (every kind)
+        run: dotnet run --no-build --project projects/scale-tests/scale-tests.fsproj -- --all-tests
+
+      - name: Granular suite (JIT-only writer checks)
+        run: dotnet run --no-build --project projects/scale-tests/scale-tests.fsproj -- --granular-tests
+
+      - name: Publish and conform the NativeAOT kernel (Linux)
+        if: runner.os == 'Linux'
+        run: just kernel-aot linux-x64
+
+      - name: Publish NativeAOT binary
+        run: dotnet publish bases/scale-cli/scale.fsproj -c Release -r ${{ matrix.rid }} -o artifacts/${{ matrix.rid }}
+
+      - name: Smoke-test the native binary (Unix)
+        if: runner.os != 'Windows'
+        run: |
+          tmpdir="$(mktemp -d)"
+          cp -R "artifacts/${{ matrix.rid }}/." "$tmpdir"
+          (cd "$tmpdir" && "./${{ matrix.binary }}") > "$tmpdir/showcase.log"
+          grep -Fq '=== Building Image ===' "$tmpdir/showcase.log"
+          grep -Fq '=== Persistence ===' "$tmpdir/showcase.log"
+
+      - name: Smoke-test the native binary (Windows)
+        if: runner.os == 'Windows'
+        run: |
+          $tmpdir = Join-Path $env:RUNNER_TEMP "scale-aot-smoke"
+          Remove-Item -Recurse -Force $tmpdir -ErrorAction SilentlyContinue
+          Copy-Item -Recurse "artifacts/${{ matrix.rid }}" $tmpdir
+          Push-Location $tmpdir
+          $code = 0
+          & ".\${{ matrix.binary }}" > showcase.log
+          if ($LASTEXITCODE -ne 0) { $code = $LASTEXITCODE }
+          if (-not (Select-String -Path showcase.log -Pattern '=== Building Image ===' -Quiet)) { $code = 1 }
+          if (-not (Select-String -Path showcase.log -Pattern '=== Persistence ===' -Quiet)) { $code = 1 }
+          Pop-Location
+          exit $code
+
+      - name: Drop the Windows Z3 library from non-Windows artifacts
+        if: runner.os != 'Windows'
+        run: rm -f artifacts/${{ matrix.rid }}/libz3.dll
+
+      - name: Package (Unix)
+        if: runner.os != 'Windows'
+        run: tar -czf ${{ matrix.archive }} -C artifacts/${{ matrix.rid }} .
+
+      - name: Package (Windows)
+        if: runner.os == 'Windows'
+        run: Compress-Archive -Path artifacts/${{ matrix.rid }}/* -DestinationPath ${{ matrix.archive }}
+
+      - name: Attach to the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release upload "${{ github.event.release.tag_name }}" "${{ matrix.archive }}" --clobber

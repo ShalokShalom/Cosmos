@@ -1,0 +1,1600 @@
+﻿// Nu Game Engine.
+// Required Notice:
+// Copyright (C) Bryan Edds.
+// Nu Game Engine is licensed under the Nu Game Engine Noncommercial License.
+// See https://github.com/bryanedds/Nu/blob/master/License.md.
+
+namespace Nu
+open System
+open System.Collections.Generic
+open System.Numerics
+open System.Reflection
+open FSharp.NativeInterop
+open FSharp.Reflection
+open DotRecast.Recast
+open ImGuiNET
+open JoltPhysicsSharp
+open Prime
+#nowarn "52" // for use of Enumerate calls
+
+/// ImGui functions for the world.
+[<AutoOpen>]
+module WorldImGui =
+
+    type World with
+
+        static member internal getImGui (world : World) =
+            world.Subsystems.ImGui
+
+        static member imGuiTryGetTextureId assetTag world =
+            let rendererProcess = World.getRendererProcess world
+            rendererProcess.TryGetImGuiTextureId assetTag
+
+        /// Render circles via ImGui in the current eye 2d space, computing color as specified.
+        static member imGuiCircles2dPlus absolute (positions : Vector2 seq) radius filled (computeColor : Vector2 -> Color) (world : World) =
+            let drawList = ImGui.GetBackgroundDrawList ()
+            let radiusInner = ImGui.Size2dToInner (world.WindowViewport, v2Dup radius)
+            for position in positions do
+                let color = computeColor position
+                let positionInner = ImGui.Position2dToInner (absolute, world.Eye2dCenter, world.Eye2dSize, world.WindowViewport, position)
+                if filled
+                then drawList.AddEllipseFilled (positionInner, radiusInner, color.Abgr)
+                else drawList.AddEllipse (positionInner, radiusInner, color.Abgr)
+
+        /// Render circles via ImGui in the current eye 2d space.
+        static member imGuiCircles2d absolute position radius filled color world =
+            World.imGuiCircles2dPlus absolute position radius filled (constant color) world
+
+        /// Render a circle via ImGui in the current eye 3d space.
+        static member imGuiCircle2d absolute position radius filled color world =
+            World.imGuiCircles2d absolute (SArray.singleton position) radius filled color world
+
+        /// Render segments via ImGui in the current eye 2d space, computing color as specified.
+        static member imGuiSegments2dPlus absolute (segments : struct (Vector2 * Vector2) seq) thickness (computeColor : struct (Vector2 * Vector2) -> Color) (world : World) =
+            let drawList = ImGui.GetBackgroundDrawList ()
+            for struct (start, stop) in segments do
+                let color = computeColor struct (start, stop)
+                let startInner = ImGui.Position2dToInner (absolute, world.Eye2dCenter, world.Eye2dSize, world.WindowViewport, start)
+                let stopInner = ImGui.Position2dToInner (absolute, world.Eye2dCenter, world.Eye2dSize, world.WindowViewport, stop)
+                drawList.AddLine (startInner, stopInner, color.Abgr, thickness)
+
+        /// Render segments via ImGui in the current eye 2d space.
+        static member imGuiSegments2d absolute segments thickness color world =
+            World.imGuiSegments2dPlus absolute segments thickness (constant color) world
+
+        /// Render a segment via ImGui in the current eye 2d space.
+        static member imGuiSegment2d absolute segment thickness color world =
+            World.imGuiSegments2d absolute (SArray.singleton segment) thickness color world
+
+        /// Render circles via ImGui in the current eye 3d space, computing color as specified.
+        static member imGuiCircles3dPlus (positions : Vector3 seq) radius filled (computeColor : Vector3 -> Color) (world : World) =
+            let drawList = ImGui.GetBackgroundDrawList ()
+            let windowPosition = ImGui.GetWindowPos ()
+            let windowSize = ImGui.GetWindowSize ()
+            let view = Viewport.getView3d world.Eye3dCenter world.Eye3dRotation
+            let projection = Viewport.getProjection3d world.Eye3dFieldOfView world.WindowViewport
+            let viewProjection = view * projection
+            let frustumView = world.Eye3dFrustumView
+            let viewport = world.WindowViewport
+            for position in positions do
+                if frustumView.Contains position = ContainmentType.Contains then
+                    let color = computeColor position
+                    let positionInner = ImGui.Position3dToInner (windowPosition, windowSize, viewProjection, viewport, position)
+                    if filled
+                    then drawList.AddCircleFilled (positionInner, radius, color.Abgr)
+                    else drawList.AddCircle (positionInner, radius, color.Abgr)
+
+        /// Render circles via ImGui in the current eye 3d space.
+        static member imGuiCircles3d position radius filled color world =
+            World.imGuiCircles3dPlus position radius filled (constant color) world
+
+        /// Render a circle via ImGui in the current eye 3d space.
+        static member imGuiCircle3d position radius filled color world =
+            World.imGuiCircles3d (SArray.singleton position) radius filled color world
+
+        /// Render segments via ImGui in the current eye 3d space, computing color as specified.
+        static member imGuiSegments3dPlus (segments : Segment3 seq) thickness (computeColor : Segment3 -> Color) (world : World) =
+            let drawList = ImGui.GetBackgroundDrawList ()
+            let windowPosition = ImGui.GetWindowPos ()
+            let windowSize = ImGui.GetWindowSize ()
+            let view = Viewport.getView3d world.Eye3dCenter world.Eye3dRotation
+            let projection = Viewport.getProjection3d world.Eye3dFieldOfView world.WindowViewport
+            let viewProjection = view * projection
+            let frustumView = world.Eye3dFrustumView
+            let viewport = world.WindowViewport
+            for segment in segments do
+                for segment' in Math.TryUnionSegmentAndFrustum' (segment, frustumView) do
+                    let color = computeColor segment'
+                    let startInner = ImGui.Position3dToInner (windowPosition, windowSize, viewProjection, viewport, segment'.A)
+                    let stopInner = ImGui.Position3dToInner (windowPosition, windowSize, viewProjection, viewport, segment'.B)
+                    drawList.AddLine (startInner, stopInner, color.Abgr, thickness)
+
+        /// Render segments via ImGui in the current eye 3d space.
+        static member imGuiSegments3d segments thickness color world =
+            World.imGuiSegments3dPlus segments thickness (constant color) world
+
+        /// Render a segment via ImGui in the current eye 3d space.
+        static member imGuiSegment3d segment thickness color world =
+            World.imGuiSegments3d (SArray.singleton segment) thickness color world
+
+        /// Render a box via ImGui in the current eye 3d space.
+        static member imGuiBox3d (box : Box3) (color : Color) (world : World) =
+            let drawList = ImGui.GetBackgroundDrawList ()
+            let windowPosition = ImGui.GetWindowPos ()
+            let windowSize = ImGui.GetWindowSize ()
+            let eyeCenter = world.Eye3dCenter
+            let eyeRotation = world.Eye3dRotation
+            let eyeFieldOfView = world.Eye3dFieldOfView
+            let viewport = world.WindowViewport
+            let frustum = Viewport.getFrustum eyeCenter eyeRotation eyeFieldOfView viewport
+            let view = Viewport.getView3d eyeCenter eyeRotation
+            let projection = Viewport.getProjection3d eyeFieldOfView viewport
+            let viewProjection = view * projection
+            let viewport = world.WindowViewport
+            let segments = box.Segments
+            for segment in segments do
+                for segment' in Math.TryUnionSegmentAndFrustum' (segment, frustum) do
+                    let aInner = ImGui.Position3dToInner (windowPosition, windowSize, viewProjection, viewport, segment'.A)
+                    let bInner = ImGui.Position3dToInner (windowPosition, windowSize, viewProjection, viewport, segment'.B)
+                    drawList.AddLine (aInner, bInner, color.Abgr)
+
+        /// Edit a Box3 via ImGui in the current eye 3d space.
+        static member imGuiEditBox3d snap box (world : World) =
+            let mutable box = box
+            let manipulationResult =
+                ImGuizmo.ManipulateBox3
+                    (world.Eye3dCenter,
+                     world.Eye3dRotation,
+                     world.Eye3dFieldOfView,
+                     world.WindowViewport,
+                     snap,
+                     &box)
+            (manipulationResult, box)
+
+        /// Edit an array value via ImGui.
+        static member imGuiEditPropertyArray<'a> (editItem : string -> 'a -> bool * bool * 'a) (defaultItemValue : 'a) itemsName (items : 'a array) context =
+            let mutable promoted = false
+            let mutable edited = false
+            let items =
+                if ImGui.SmallButton "+" then
+                    edited <- true
+                    Array.add defaultItemValue items
+                else items
+            if ImGui.IsItemFocused () then context.FocusProperty ()
+            ImGui.Indent ()
+            let itemOpts =
+                let mutable i = 0
+                [|for item in items do
+                    let itemName = itemsName + "[" + string i + "]"
+                    ImGui.PushID itemName
+                    let itemOpt =
+                        if not (ImGui.SmallButton "x") then
+                            ImGui.SameLine ()
+                            try let (promoted2, edited2, item) = editItem itemName item
+                                if promoted2 then promoted <- true
+                                if edited2 then edited <- true
+                                if ImGui.IsItemFocused () then context.FocusProperty ()
+                                Some item
+                            with _ -> Some item
+                        else edited <- true; None
+                    if ImGui.IsItemFocused () then context.FocusProperty ()
+                    ImGui.PopID ()
+                    i <- inc i
+                    itemOpt|]
+            let items = Array.definitize itemOpts
+            ImGui.Unindent ()
+            (promoted, edited, items)
+
+        /// Edit a list value via ImGui.
+        static member imGuiEditPropertyList<'a> (editItem : string -> 'a -> bool * bool * 'a) (defaultItemValue : 'a) itemsName (items : 'a list) context =
+            let mutable promoted = false
+            let mutable edited = false
+            let items =
+                if ImGui.SmallButton "+" then
+                    edited <- true
+                    items @ [defaultItemValue]
+                else items
+            if ImGui.IsItemFocused () then context.FocusProperty ()
+            ImGui.Indent ()
+            let itemOpts =
+                let mutable i = 0
+                [for item in items do
+                    let itemName = itemsName + "[" + string i + "]"
+                    ImGui.PushID itemName
+                    let itemOpt =
+                        if not (ImGui.SmallButton "x") then
+                            ImGui.SameLine ()
+                            try let (promoted2, edited2, item) = editItem itemName item
+                                if promoted2 then promoted <- true
+                                if edited2 then edited <- true
+                                if ImGui.IsItemFocused () then context.FocusProperty ()
+                                Some item
+                            with _ -> Some item
+                        else edited <- true; None
+                    if ImGui.IsItemFocused () then context.FocusProperty ()
+                    ImGui.PopID ()
+                    i <- inc i
+                    itemOpt]
+            let items = List.definitize itemOpts
+            ImGui.Unindent ()
+            (edited, items)
+
+        /// Edit a record value via ImGui, optionally replacing the instructed fields.
+        /// This function can also automatically promote user-defined types for code-reloading.
+        static member imGuiEditPropertyRecordPlus tryReplaceField headered (name : string) (ty : Type) (value : obj) context world : bool * bool * obj =
+            if headered then
+                ImGui.Text name
+                ImGui.Indent ()
+            ImGui.PushID name
+            let mutable promoted = false
+            let mutable edited = false
+            let value =
+                let value' = objToObj ty value
+                if refNeq value' value then promoted <- true
+                value'
+            let fields =
+                FSharpType.GetRecordFields (ty, true)
+                |> Array.zip (FSharpValue.GetRecordFields (value, true))
+                |> Array.map (fun (field, fieldInfo : PropertyInfo) ->
+                    match tryReplaceField fieldInfo field with
+                    | Some (edited2, field) ->
+                        if edited2 then edited <- true
+                        field
+                    | None ->
+                        let fieldName =
+                            if ty.IsDefined (typeof<SymbolicExpansionAttribute>, true) then
+                                let expansionAttribute = ty.GetCustomAttribute<SymbolicExpansionAttribute> true
+                                if expansionAttribute.PrettifyFieldNames then
+                                    if fieldInfo.Name.EndsWith "_"
+                                    then fieldInfo.Name.Substring (0, dec fieldInfo.Name.Length)
+                                    else String.capitalize fieldInfo.Name
+                                else fieldInfo.Name
+                            else fieldInfo.Name
+                        let (promoted2, edited2, field) =
+                            if  fieldInfo.PropertyType.Name <> typedefof<_ AssetTag>.Name &&
+                                (FSharpType.IsRecord fieldInfo.PropertyType || FSharpType.isRecordAbstract fieldInfo.PropertyType) then
+                                World.imGuiEditPropertyRecord true fieldName fieldInfo.PropertyType field context world
+                            else World.imGuiEditProperty fieldName fieldInfo.PropertyType field context world
+                        if promoted2 then promoted <- true
+                        if edited2 then edited <- true
+                        field)
+            let value = FSharpValue.MakeRecord (ty, fields, true)
+            if headered then ImGui.Unindent ()
+            ImGui.PopID ()
+            (promoted, edited, value)
+
+        /// Edit a record value via ImGui, optionally replacing the instructed fields.
+        static member imGuiEditPropertyRecord headered name ty value context world : bool * bool * obj =
+            World.imGuiEditPropertyRecordPlus (fun _ _ -> None) headered name ty value context world
+
+        /// Select a case name from an F# union via ImGui.
+        static member imGuiSelectCase name ty (value : 'a) context =
+            let (promoted, value) =
+                let value' = objToObj ty value :?> 'a
+                (refNeq value' value, value')
+            let cases = FSharpType.GetUnionCases ty
+            let tag = getCaseTag value
+            let case = cases[tag]
+            let mutable caseNameEdited = false
+            let mutable caseName = case.Name
+            if ImGui.BeginCombo (name, caseName) then
+                for case' in cases do
+                    let caseName' = case'.Name
+                    if ImGui.Selectable (caseName', (caseName' = caseName)) then
+                        if caseName <> caseName' then
+                            caseNameEdited <- true
+                            caseName <- caseName'
+                ImGui.EndCombo ()
+            if ImGui.IsItemFocused () then context.FocusProperty ()
+            (promoted, caseNameEdited, caseName)
+
+        /// Edit a simple (fieldless) F# union via ImGui.
+        /// NOTE: there's no actual use for this function when you can just use imGuiEditProperty instead as it does
+        /// all the same things that are done here.
+        static member imGuiEditPropertyUnionSimple (name : string) ty (value : 'a) context =
+            let (promoted, value) =
+                let value' = objToObj ty value :?> 'a
+                (refNeq value' value, value')
+            let mutable index = getCaseTag value
+            let (edited, value') =
+                let cases = FSharpType.GetUnionCases ty
+                if Array.exists (fun (case : UnionCaseInfo) -> case.GetFields().Length <> 0) cases then
+                    failwith "ImGui editing of simple unions only supports fieldless cases."
+                let names = cases |> Array.map _.Name
+                if ImGui.Combo (name, &index, names, names.Length)
+                then (true, FSharpValue.MakeUnion (cases[index], null) :?> 'a)
+                else (false, value)
+            if ImGui.IsItemFocused () then context.FocusProperty ()
+            (promoted, edited, value' :> obj)
+
+        /// Edit a general value via ImGui, also automatically promoting user-defined types for code-reloading.
+        static member private imGuiEditPropertyGeneralized (name : string) (ty : Type) (value : obj) (context : EditContext) world : bool * bool * obj =
+                
+            // unspecialized type, so promotion is always possible here
+            let (promoted, value) =
+                let value' = objToObj ty value
+                (refNeq value' value, value')
+
+            // detect when combo box editing is appropriate
+            let mutable combo = false
+            let (edited, value) =
+                if FSharpType.IsUnion ty then
+                    let cases = FSharpType.GetUnionCases ty
+                    if Array.forall (fun (case : UnionCaseInfo) -> Array.isEmpty (case.GetFields ())) cases then
+                        combo <- true
+                        let caseNames = Array.map (fun (case : UnionCaseInfo) -> case.Name) cases
+                        let (unionCaseInfo, _) = FSharpValue.GetUnionFields (value, ty)
+                        let mutable tag = unionCaseInfo.Tag
+                        let (edited2, value) =
+                            if ImGui.Combo (name, &tag, caseNames, caseNames.Length)
+                            then (true, FSharpValue.MakeUnion (cases[tag], [||]))
+                            else (false, value)
+                        if ImGui.IsItemFocused () then context.FocusProperty ()
+                        (edited2, value)
+                    else (false, value)
+                else (false, value)
+
+            // when not combo box editing
+            if not combo then
+                if  ty.IsGenericType &&
+                    ty.GetGenericTypeDefinition () = typedefof<_ option> &&
+                    (not ty.GenericTypeArguments[0].IsGenericType || ty.GenericTypeArguments[0].GetGenericTypeDefinition () <> typedefof<_ option>) &&
+                    (not ty.GenericTypeArguments[0].IsGenericType || ty.GenericTypeArguments[0].GetGenericTypeDefinition () <> typedefof<_ voption>) &&
+                    ty.GenericTypeArguments[0] <> typeof<Material> &&
+                    ty.GenericTypeArguments[0] <> typeof<MaterialProperties> &&
+                    (ty.GenericTypeArguments[0].IsValueType ||
+                     ty.GenericTypeArguments[0] = typeof<string> ||
+                     ty.GenericTypeArguments[0] = typeof<Slide> ||
+                     ty.GenericTypeArguments[0] = typeof<Image AssetTag> ||
+                     ty.GenericTypeArguments[0] = typeof<Font AssetTag> ||
+                     ty.GenericTypeArguments[0] = typeof<TileMap AssetTag> ||
+                     ty.GenericTypeArguments[0] = typeof<CubeMap AssetTag> ||
+                     ty.GenericTypeArguments[0] = typeof<Sound AssetTag> ||
+                     ty.GenericTypeArguments[0] = typeof<Song AssetTag> ||
+                     ty.GenericTypeArguments[0] = typeof<StaticModel AssetTag> ||
+                     ty.GenericTypeArguments[0] = typeof<AnimatedModel AssetTag> ||
+                     ty.GenericTypeArguments[0] = typeof<SoundDescriptor> ||
+                     ty.GenericTypeArguments[0] = typeof<SongDescriptor> ||
+                     ty.GenericTypeArguments[0] = typeof<ScatterType> ||
+                     ty.GenericTypeArguments[0] = typeof<Entity> ||
+                     (ty.GenericTypeArguments[0].IsGenericType && ty.GenericTypeArguments[0].GetGenericTypeDefinition () = typedefof<_ array>) ||
+                     (ty.GenericTypeArguments[0].IsGenericType && ty.GenericTypeArguments[0].GetGenericTypeDefinition () = typedefof<_ list>) ||
+                     (ty.GenericTypeArguments[0].IsGenericType && ty.GenericTypeArguments[0].GetGenericTypeDefinition () = typedefof<_ FList>) ||
+                     (ty.GenericTypeArguments[0].IsGenericType && ty.GenericTypeArguments[0].GetGenericTypeDefinition () = typedefof<_ FQueue>) ||
+                     (ty.GenericTypeArguments[0].IsGenericType && ty.GenericTypeArguments[0].GetGenericTypeDefinition () = typedefof<_ FDeque>) ||
+                     (ty.GenericTypeArguments[0].IsGenericType && ty.GenericTypeArguments[0].GetGenericTypeDefinition () = typedefof<_ Set>) ||
+                     (ty.GenericTypeArguments[0].IsGenericType && ty.GenericTypeArguments[0].GetGenericTypeDefinition () = typedefof<_ FSet>) ||
+                     (ty.GenericTypeArguments[0].IsGenericType && ty.GenericTypeArguments[0].GetGenericTypeDefinition () = typedefof<Map<_, _>>) ||
+                     (ty.GenericTypeArguments[0].IsGenericType && ty.GenericTypeArguments[0].GetGenericTypeDefinition () = typedefof<FMap<_, _>>) ||
+                     (ty.GenericTypeArguments[0].IsGenericType && ty.GenericTypeArguments[0].GetGenericTypeDefinition () = typedefof<_ Address>) ||
+                     ty.GenericTypeArguments[0] |> FSharpType.isNullTrueValue) then
+                    let mutable isSome = ty.GetProperty("IsSome").GetValue(null, [|value|]) :?> bool
+                    let (edited2, value) =
+                        if ImGui.Checkbox ("##" + name, &isSome) then
+                            if isSome then
+                                if ty.GenericTypeArguments[0].IsValueType then
+                                    if ty.GenericTypeArguments[0] = typeof<Color> then
+                                        (true, Activator.CreateInstance (ty, [|colorOne :> obj|]))
+                                    elif ty.GenericTypeArguments[0].Name = typedefof<_ AssetTag>.Name then
+                                        (true, Activator.CreateInstance (ty, [|Activator.CreateInstance (ty.GenericTypeArguments[0], [|""; ""|])|]))
+                                    else
+                                        (true, Activator.CreateInstance (ty, [|Activator.CreateInstance ty.GenericTypeArguments[0]|]))
+                                elif ty.GenericTypeArguments[0] = typeof<string> then (true, Activator.CreateInstance (ty, [|"" :> obj|]))
+                                elif ty.GenericTypeArguments[0] = typeof<Slide> then (true, Activator.CreateInstance (ty, [|{ IdlingTime = GameTime.zero; Destination = context.SelectedScreen } :> obj|]))
+                                elif ty.GenericTypeArguments[0] = typeof<Image AssetTag> then (true, Activator.CreateInstance (ty, [|Assets.Default.Image :> obj|]))
+                                elif ty.GenericTypeArguments[0] = typeof<Font AssetTag> then (true, Activator.CreateInstance (ty, [|Assets.Default.Font :> obj|]))
+                                elif ty.GenericTypeArguments[0] = typeof<TileMap AssetTag> then (true, Activator.CreateInstance (ty, [|Assets.Default.TileMap :> obj|]))
+                                elif ty.GenericTypeArguments[0] = typeof<CubeMap AssetTag> then (true, Activator.CreateInstance (ty, [|Assets.Default.SkyBoxMap :> obj|]))
+                                elif ty.GenericTypeArguments[0] = typeof<Sound AssetTag> then (true, Activator.CreateInstance (ty, [|Assets.Default.Sound :> obj|]))
+                                elif ty.GenericTypeArguments[0] = typeof<Song AssetTag> then (true, Activator.CreateInstance (ty, [|Assets.Default.Song :> obj|]))
+                                elif ty.GenericTypeArguments[0] = typeof<StaticModel AssetTag> then (true, Activator.CreateInstance (ty, [|Assets.Default.StaticModel :> obj|]))
+                                elif ty.GenericTypeArguments[0] = typeof<AnimatedModel AssetTag> then (true, Activator.CreateInstance (ty, [|Assets.Default.AnimatedModel :> obj|]))
+                                elif ty.GenericTypeArguments[0] = typeof<SoundDescriptor> then (true, Activator.CreateInstance (ty, [|SoundDescriptor.defaultDescriptor :> obj|]))
+                                elif ty.GenericTypeArguments[0] = typeof<SongDescriptor> then (true, Activator.CreateInstance (ty, [|SongDescriptor.defaultDescriptor :> obj|]))
+                                elif ty.GenericTypeArguments[0] = typeof<ScatterType> then (true, Activator.CreateInstance (ty, [|NoScatter :> obj|]))
+                                elif ty.GenericTypeArguments[0].IsGenericType && ty.GenericTypeArguments[0].GetGenericTypeDefinition () = typedefof<_ array> then (true, Activator.CreateInstance (ty, [|Reflection.objsToArray ty.GenericTypeArguments[0] []|]))
+                                elif ty.GenericTypeArguments[0].IsGenericType && ty.GenericTypeArguments[0].GetGenericTypeDefinition () = typedefof<_ list> then (true, Activator.CreateInstance (ty, [|Reflection.objsToList ty.GenericTypeArguments[0] []|]))
+                                elif ty.GenericTypeArguments[0].IsGenericType && ty.GenericTypeArguments[0].GetGenericTypeDefinition () = typedefof<_ FList> then (true, Activator.CreateInstance (ty, [|Reflection.objsToCollection typedefof<_ FList>.Name ty.GenericTypeArguments[0] []|]))
+                                elif ty.GenericTypeArguments[0].IsGenericType && ty.GenericTypeArguments[0].GetGenericTypeDefinition () = typedefof<_ FQueue> then (true, Activator.CreateInstance (ty, [|Reflection.objsToCollection typedefof<_ FQueue>.Name ty.GenericTypeArguments[0] []|]))
+                                elif ty.GenericTypeArguments[0].IsGenericType && ty.GenericTypeArguments[0].GetGenericTypeDefinition () = typedefof<_ FDeque> then (true, Activator.CreateInstance (ty, [|Reflection.objsToCollection typedefof<_ FDeque>.Name ty.GenericTypeArguments[0] []|]))
+                                elif ty.GenericTypeArguments[0].IsGenericType && ty.GenericTypeArguments[0].GetGenericTypeDefinition () = typedefof<_ Set> then (true, Activator.CreateInstance (ty, [|Reflection.objsToSet ty.GenericTypeArguments[0] []|]))
+                                elif ty.GenericTypeArguments[0].IsGenericType && ty.GenericTypeArguments[0].GetGenericTypeDefinition () = typedefof<_ FSet> then (true, Activator.CreateInstance (ty, [|Reflection.objsToFSet ty.GenericTypeArguments[0] []|]))
+                                elif ty.GenericTypeArguments[0].IsGenericType && ty.GenericTypeArguments[0].GetGenericTypeDefinition () = typedefof<Map<_, _>> then (true, Activator.CreateInstance (ty, [|Reflection.pairsToMap ty.GenericTypeArguments[0] []|]))
+                                elif ty.GenericTypeArguments[0].IsGenericType && ty.GenericTypeArguments[0].GetGenericTypeDefinition () = typedefof<FMap<_, _>> then (true, Activator.CreateInstance (ty, [|Reflection.pairsToFMap ty.GenericTypeArguments[0] []|]))
+                                elif ty.GenericTypeArguments[0].IsGenericType && ty.GenericTypeArguments[0].GetGenericTypeDefinition () = typedefof<_ Address> then
+                                    let addressType = ty.GenericTypeArguments[0]
+                                    let makeFromStringFunction = addressType.GetMethod ("makeFromString", BindingFlags.Static ||| BindingFlags.Public)
+                                    let makeFromStringFunctionGeneric = makeFromStringFunction.MakeGenericMethod ((addressType.GetGenericArguments ())[0])
+                                    let addressValue = makeFromStringFunctionGeneric.Invoke (null, [|"???"|])
+                                    (true, Activator.CreateInstance (ty, [|addressValue|]))
+                                elif ty.GenericTypeArguments[0] = typeof<Entity> then
+                                    (true, Activator.CreateInstance (ty, [|Nu.Entity (Array.add "???" context.SelectedGroup.Names) :> obj|]))
+                                elif FSharpType.isNullTrueValue ty.GenericTypeArguments[0] then
+                                    (true, Activator.CreateInstance (ty, [|null|]))
+                                else (false, value)
+                            else (true, None)
+                        else (false, value)
+                    if ImGui.IsItemFocused () then context.FocusProperty ()
+                    if isSome then
+                        ImGui.SameLine ()
+                        ImGui.PushID name
+                        let (promoted, edited3, value2) = World.imGuiEditProperty name ty.GenericTypeArguments[0] (ty.GetProperty("Value").GetValue(value, [||])) context world
+                        ImGui.PopID ()
+                        let value = Activator.CreateInstance (ty, [|value2|])
+                        (promoted, edited || edited2 || edited3, value)
+                    else
+                        ImGui.SameLine ()
+                        ImGui.Text name
+                        (false, edited || edited2, value)
+                elif ty.IsGenericType &&
+                     ty.GetGenericTypeDefinition () = typedefof<_ voption> &&
+                     (not ty.GenericTypeArguments[0].IsGenericType || ty.GenericTypeArguments[0].GetGenericTypeDefinition () <> typedefof<_ option>) &&
+                     (not ty.GenericTypeArguments[0].IsGenericType || ty.GenericTypeArguments[0].GetGenericTypeDefinition () <> typedefof<_ voption>) &&
+                     ty.GenericTypeArguments[0] <> typeof<Material> &&
+                     ty.GenericTypeArguments[0] <> typeof<MaterialProperties> &&
+                     (ty.GenericTypeArguments[0].IsValueType ||
+                      ty.GenericTypeArguments[0] = typeof<string> ||
+                      ty.GenericTypeArguments[0] = typeof<Slide> ||
+                      ty.GenericTypeArguments[0] = typeof<Image AssetTag> ||
+                      ty.GenericTypeArguments[0] = typeof<Font AssetTag> ||
+                      ty.GenericTypeArguments[0] = typeof<TileMap AssetTag> ||
+                      ty.GenericTypeArguments[0] = typeof<CubeMap AssetTag> ||
+                      ty.GenericTypeArguments[0] = typeof<Sound AssetTag> ||
+                      ty.GenericTypeArguments[0] = typeof<Song AssetTag> ||
+                      ty.GenericTypeArguments[0] = typeof<StaticModel AssetTag> ||
+                      ty.GenericTypeArguments[0] = typeof<AnimatedModel AssetTag> ||
+                      ty.GenericTypeArguments[0] = typeof<SoundDescriptor> ||
+                      ty.GenericTypeArguments[0] = typeof<SongDescriptor> ||
+                      ty.GenericTypeArguments[0] = typeof<ScatterType> ||
+                      ty.GenericTypeArguments[0] = typeof<Entity> ||
+                      (ty.GenericTypeArguments[0].IsGenericType && ty.GenericTypeArguments[0].GetGenericTypeDefinition () = typedefof<_ array>) ||
+                      (ty.GenericTypeArguments[0].IsGenericType && ty.GenericTypeArguments[0].GetGenericTypeDefinition () = typedefof<_ list>) ||
+                      (ty.GenericTypeArguments[0].IsGenericType && ty.GenericTypeArguments[0].GetGenericTypeDefinition () = typedefof<_ FList>) ||
+                      (ty.GenericTypeArguments[0].IsGenericType && ty.GenericTypeArguments[0].GetGenericTypeDefinition () = typedefof<_ FQueue>) ||
+                      (ty.GenericTypeArguments[0].IsGenericType && ty.GenericTypeArguments[0].GetGenericTypeDefinition () = typedefof<_ FDeque>) ||
+                      (ty.GenericTypeArguments[0].IsGenericType && ty.GenericTypeArguments[0].GetGenericTypeDefinition () = typedefof<_ Set>) ||
+                      (ty.GenericTypeArguments[0].IsGenericType && ty.GenericTypeArguments[0].GetGenericTypeDefinition () = typedefof<_ FSet>) ||
+                      (ty.GenericTypeArguments[0].IsGenericType && ty.GenericTypeArguments[0].GetGenericTypeDefinition () = typedefof<Map<_, _>>) ||
+                      (ty.GenericTypeArguments[0].IsGenericType && ty.GenericTypeArguments[0].GetGenericTypeDefinition () = typedefof<FMap<_, _>>) ||
+                      (ty.GenericTypeArguments[0].IsGenericType && ty.GenericTypeArguments[0].GetGenericTypeDefinition () = typedefof<_ Address>) ||
+                      ty.GenericTypeArguments[0] |> FSharpType.isNullTrueValue) then
+                    let mutable isSome = ty.GetProperty("IsSome").GetValue(value, [||]) :?> bool
+                    let (edited2, value) =
+                        if ImGui.Checkbox ("##" + name, &isSome) then
+                            let createValueOption value =
+                                ty.GetMethod("Some", BindingFlags.Public ||| BindingFlags.Static).Invoke(null, [|value :> obj|])
+                            if isSome then
+                                if ty.GenericTypeArguments[0].IsValueType then
+                                    if ty.GenericTypeArguments[0] = typeof<Color> then
+                                        (true, createValueOption colorOne)
+                                    elif ty.GenericTypeArguments[0].Name = typedefof<_ AssetTag>.Name then
+                                        (true, createValueOption (Activator.CreateInstance (ty.GenericTypeArguments[0], [|""; ""|])))
+                                    else
+                                        (true, createValueOption (Activator.CreateInstance ty.GenericTypeArguments[0]))
+                                elif ty.GenericTypeArguments[0] = typeof<string> then (true, createValueOption "")
+                                elif ty.GenericTypeArguments[0] = typeof<Slide> then (true, createValueOption { IdlingTime = GameTime.zero; Destination = context.SelectedScreen })
+                                elif ty.GenericTypeArguments[0] = typeof<Image AssetTag> then (true, createValueOption Assets.Default.Image)
+                                elif ty.GenericTypeArguments[0] = typeof<Font AssetTag> then (true, createValueOption Assets.Default.Font)
+                                elif ty.GenericTypeArguments[0] = typeof<TileMap AssetTag> then (true, createValueOption Assets.Default.TileMap)
+                                elif ty.GenericTypeArguments[0] = typeof<CubeMap AssetTag> then (true, createValueOption Assets.Default.SkyBoxMap)
+                                elif ty.GenericTypeArguments[0] = typeof<Sound AssetTag> then (true, createValueOption Assets.Default.Sound)
+                                elif ty.GenericTypeArguments[0] = typeof<Song AssetTag> then (true, createValueOption Assets.Default.Song)
+                                elif ty.GenericTypeArguments[0] = typeof<StaticModel AssetTag> then (true, createValueOption Assets.Default.StaticModel)
+                                elif ty.GenericTypeArguments[0] = typeof<AnimatedModel AssetTag> then (true, createValueOption Assets.Default.AnimatedModel)
+                                elif ty.GenericTypeArguments[0] = typeof<SoundDescriptor> then (true, createValueOption SoundDescriptor.defaultDescriptor)
+                                elif ty.GenericTypeArguments[0] = typeof<SongDescriptor> then (true, createValueOption SongDescriptor.defaultDescriptor)
+                                elif ty.GenericTypeArguments[0] = typeof<ScatterType> then (true, createValueOption NoScatter)
+                                elif ty.GenericTypeArguments[0].IsGenericType && ty.GenericTypeArguments[0].GetGenericTypeDefinition () = typedefof<_ array> then (true, createValueOption (Reflection.objsToArray ty.GenericTypeArguments[0] []))
+                                elif ty.GenericTypeArguments[0].IsGenericType && ty.GenericTypeArguments[0].GetGenericTypeDefinition () = typedefof<_ list> then (true, createValueOption (Reflection.objsToList ty.GenericTypeArguments[0] []))
+                                elif ty.GenericTypeArguments[0].IsGenericType && ty.GenericTypeArguments[0].GetGenericTypeDefinition () = typedefof<_ FList> then (true, createValueOption (Reflection.objsToCollection typedefof<_ FList>.Name ty.GenericTypeArguments[0] []))
+                                elif ty.GenericTypeArguments[0].IsGenericType && ty.GenericTypeArguments[0].GetGenericTypeDefinition () = typedefof<_ FQueue> then (true, createValueOption (Reflection.objsToCollection typedefof<_ FQueue>.Name ty.GenericTypeArguments[0] []))
+                                elif ty.GenericTypeArguments[0].IsGenericType && ty.GenericTypeArguments[0].GetGenericTypeDefinition () = typedefof<_ FDeque> then (true, createValueOption (Reflection.objsToCollection typedefof<_ FDeque>.Name ty.GenericTypeArguments[0] []))
+                                elif ty.GenericTypeArguments[0].IsGenericType && ty.GenericTypeArguments[0].GetGenericTypeDefinition () = typedefof<_ Set> then (true, createValueOption (Reflection.objsToSet ty.GenericTypeArguments[0] []))
+                                elif ty.GenericTypeArguments[0].IsGenericType && ty.GenericTypeArguments[0].GetGenericTypeDefinition () = typedefof<_ FSet> then (true, createValueOption (Reflection.objsToFSet ty.GenericTypeArguments[0] []))
+                                elif ty.GenericTypeArguments[0].IsGenericType && ty.GenericTypeArguments[0].GetGenericTypeDefinition () = typedefof<Map<_, _>> then (true, createValueOption (Reflection.pairsToMap ty.GenericTypeArguments[0] []))
+                                elif ty.GenericTypeArguments[0].IsGenericType && ty.GenericTypeArguments[0].GetGenericTypeDefinition () = typedefof<FMap<_, _>> then (true, createValueOption (Reflection.pairsToFMap ty.GenericTypeArguments[0] []))
+                                elif ty.GenericTypeArguments[0].IsGenericType && ty.GenericTypeArguments[0].GetGenericTypeDefinition () = typedefof<_ Address> then
+                                    let addressType = ty.GenericTypeArguments[0]
+                                    let makeFromStringFunction = addressType.GetMethod ("makeFromString", BindingFlags.Static ||| BindingFlags.Public)
+                                    let makeFromStringFunctionGeneric = makeFromStringFunction.MakeGenericMethod ((addressType.GetGenericArguments ())[0])
+                                    let addressValue = makeFromStringFunctionGeneric.Invoke (null, [|"^"|])
+                                    (true, createValueOption addressValue)
+                                elif ty.GenericTypeArguments[0] = typeof<Entity> then
+                                    (true, createValueOption (Nu.Entity (Array.add "???" context.SelectedGroup.Names)))
+                                elif FSharpType.isNullTrueValue ty.GenericTypeArguments[0] then
+                                    (true, createValueOption null)
+                                else failwithumf ()
+                            else (true, ty.GetProperty("None", BindingFlags.Public ||| BindingFlags.Static).GetValue(null))
+                        else (false, value)
+                    if ImGui.IsItemFocused () then context.FocusProperty ()
+                    if isSome then
+                        ImGui.SameLine ()
+                        ImGui.PushID name
+                        let (promoted, edited3, value2) = World.imGuiEditProperty name ty.GenericTypeArguments[0] (ty.GetProperty("Value").GetValue(value, [||])) context world
+                        ImGui.PopID ()
+                        let value = ty.GetMethod("Some", BindingFlags.Public ||| BindingFlags.Static).Invoke(null, [|value2|])
+                        (promoted, edited || edited2 || edited3, value)
+                    else
+                        ImGui.SameLine ()
+                        ImGui.Text name
+                        (false, edited || edited2, value)
+                elif ty.IsGenericType && ty.GetGenericTypeDefinition () = typedefof<_ AssetTag> then
+                    let converter = SymbolicConverter (false, None, ty, context.ToSymbolMemo, context.OfSymbolMemo)                        
+                    let mutable valueStr = converter.ConvertToString value
+                    let (edited2, value) =
+                        if ImGui.InputText ("##text" + name, &valueStr, 4096u) then
+                            try (true, converter.ConvertFromString valueStr)
+                            with _ -> (false, value)
+                        else (false, value)
+                    if ImGui.IsItemFocused () then context.FocusProperty ()
+                    let (edited3, value) =
+                        if ImGui.BeginDragDropTarget () then
+                            let (edited4, value) =
+                                if NativePtr.notNullPtr (ImGui.AcceptDragDropPayload "Asset").NativePtr then
+                                    match context.DragDropPayloadOpt with
+                                    | Some (DragDropAsset (assetTagStr, _)) ->
+                                        try let valueStrEscaped = assetTagStr
+                                            let valueStrUnescaped = String.unescape valueStrEscaped
+                                            let value = converter.ConvertFromString valueStrUnescaped
+                                            (true, value)
+                                        with _ -> (false, value)
+                                    | Some _ | None -> (false, value)
+                                else (false, value)
+                            ImGui.EndDragDropTarget ()
+                            (edited4, value)
+                        else (false, value)
+                    ImGui.SameLine ()
+                    ImGui.PushID ("##pickAsset" + name)
+                    if ImGui.Button ("V", v2Dup 19.0f) then context.SearchAssetViewer ()
+                    if ImGui.IsItemFocused () then context.FocusProperty ()
+                    ImGui.PopID ()
+                    ImGui.SameLine ()
+                    ImGui.Text name
+                    (false, edited || edited2 || edited3, value)
+                else
+                    let converter = SymbolicConverter (false, None, ty, context.ToSymbolMemo, context.OfSymbolMemo)                        
+                    let valueStr = converter.ConvertToString value
+                    let prettyPrinter = (SyntaxAttribute.defaultValue ty).PrettyPrinter
+                    let mutable valueStrPretty = PrettyPrinter.prettyPrint valueStr prettyPrinter
+                    let lines = valueStrPretty |> Seq.filter ((=) '\n') |> Seq.length |> inc
+                    let (edited2, value) =
+                        if lines = 1 then
+                            let mutable valueStr = valueStr
+                            if ImGui.InputText (name, &valueStr, 131072u) then
+                                try (true, converter.ConvertFromString valueStr)
+                                with _ -> (false, value)
+                            else (false, value)
+                        else
+                            ImGui.Text name
+                            if ImGui.InputTextMultiline ("##" + name + "InputTextMultiline", &valueStrPretty, 131072u, v2 -1.0f (single (min 6 lines) * 13.0f + 7.0f)) then
+                                try (true, converter.ConvertFromString valueStrPretty)
+                                with _ -> (false, value)
+                            else (false, value)
+                    if ImGui.IsItemFocused () then context.FocusProperty ()
+                    (false, edited || edited2, value)
+
+            // otherwise combo box editing
+            else (promoted, edited, value)
+
+        /// Edit a value via ImGui, also automatically promoting user-defined types for code-reloading.
+        static member imGuiEditProperty (name : string) (ty : Type) (value : obj) (context : EditContext) world : bool * bool * obj =
+            match value with
+            | :? bool as b -> let mutable b = b in (false, ImGui.Checkbox (name, &b), b :> obj) |> fun result -> (if ImGui.IsItemFocused () then context.FocusProperty ()); result
+            | :? int8 as i -> let mutable i = int32 i in (false, ImGui.DragInt (name, &i), int8 i :> obj) |> fun result -> (if ImGui.IsItemFocused () then context.FocusProperty ()); result
+            | :? uint8 as i -> let mutable i = int32 i in (false, ImGui.DragInt (name, &i), uint8 i :> obj) |> fun result -> (if ImGui.IsItemFocused () then context.FocusProperty ()); result
+            | :? int16 as i -> let mutable i = int32 i in (false, ImGui.DragInt (name, &i), int16 i :> obj) |> fun result -> (if ImGui.IsItemFocused () then context.FocusProperty ()); result
+            | :? uint16 as i -> let mutable i = int32 i in (false, ImGui.DragInt (name, &i), uint16 i :> obj) |> fun result -> (if ImGui.IsItemFocused () then context.FocusProperty ()); result
+            | :? int32 as i -> let mutable i = int32 i in (false, ImGui.DragInt (name, &i), int32 i :> obj) |> fun result -> (if ImGui.IsItemFocused () then context.FocusProperty ()); result
+            | :? uint32 as i -> let mutable i = int32 i in (false, ImGui.DragInt (name, &i), uint32 i :> obj) |> fun result -> (if ImGui.IsItemFocused () then context.FocusProperty ()); result
+            | :? int64 as i -> let mutable i = int32 i in (false, ImGui.DragInt (name, &i), int64 i :> obj) |> fun result -> (if ImGui.IsItemFocused () then context.FocusProperty ()); result
+            | :? uint64 as i -> let mutable i = int32 i in (false, ImGui.DragInt (name, &i), uint64 i :> obj) |> fun result -> (if ImGui.IsItemFocused () then context.FocusProperty ()); result
+            | :? single as f -> let mutable f = single f in (false, ImGui.DragFloat (name, &f, context.SnapDrag), single f :> obj) |> fun result -> (if ImGui.IsItemFocused () then context.FocusProperty ()); result
+            | :? double as f -> let mutable f = single f in (false, ImGui.DragFloat (name, &f, context.SnapDrag), double f :> obj) |> fun result -> (if ImGui.IsItemFocused () then context.FocusProperty ()); result
+            | :? Vector2 as v -> let mutable v = v in (false, ImGui.DragFloat2 (name, &v, context.SnapDrag), v :> obj) |> fun result -> (if ImGui.IsItemFocused () then context.FocusProperty ()); result
+            | :? Vector3 as v -> let mutable v = v in (false, ImGui.DragFloat3 (name, &v, context.SnapDrag), v :> obj) |> fun result -> (if ImGui.IsItemFocused () then context.FocusProperty ()); result
+            | :? Vector4 as v -> let mutable v = v in (false, ImGui.DragFloat4 (name, &v, context.SnapDrag), v :> obj) |> fun result -> (if ImGui.IsItemFocused () then context.FocusProperty ()); result
+            | :? Vector2i as v -> let mutable v = v in (false, ImGui.DragInt2 (name, &v.X, context.SnapDrag), v :> obj) |> fun result -> (if ImGui.IsItemFocused () then context.FocusProperty ()); result
+            | :? Vector3i as v -> let mutable v = v in (false, ImGui.DragInt3 (name, &v.X, context.SnapDrag), v :> obj) |> fun result -> (if ImGui.IsItemFocused () then context.FocusProperty ()); result
+            | :? Vector4i as v -> let mutable v = v in (false, ImGui.DragInt4 (name, &v.X, context.SnapDrag), v :> obj) |> fun result -> (if ImGui.IsItemFocused () then context.FocusProperty ()); result
+            | :? Box2 as b ->
+                ImGui.Text name
+                ImGui.PushID name
+                ImGui.Indent ()
+                let mutable min = v2 b.Min.X b.Min.Y
+                let mutable size = v2 b.Size.X b.Size.Y
+                let minEdited = ImGui.DragFloat2 (nameof b.Min, &min, context.SnapDrag)
+                if ImGui.IsItemFocused () then context.FocusProperty ()
+                let sizeEdited = ImGui.DragFloat2 (nameof b.Size, &size, context.SnapDrag)
+                if ImGui.IsItemFocused () then context.FocusProperty ()
+                ImGui.Unindent ()
+                ImGui.PopID ()
+                (false, minEdited || sizeEdited, box2 min size :> obj)
+            | :? Box3 as b ->
+                ImGui.Text name
+                ImGui.PushID name
+                ImGui.Indent ()
+                let mutable min = v3 b.Min.X b.Min.Y b.Min.Z
+                let mutable size = v3 b.Size.X b.Size.Y b.Size.Z
+                let minEdited = ImGui.DragFloat3 (nameof b.Min, &min, context.SnapDrag)
+                if ImGui.IsItemFocused () then context.FocusProperty ()
+                let sizeEdited = ImGui.DragFloat3 (nameof b.Size, &size, context.SnapDrag)
+                if ImGui.IsItemFocused () then context.FocusProperty ()
+                ImGui.Unindent ()
+                ImGui.PopID ()
+                (false, minEdited || sizeEdited, box3 min size :> obj)
+            | :? Box2i as b ->
+                ImGui.Text name
+                ImGui.PushID name
+                ImGui.Indent ()
+                let mutable min = v2i b.Min.X b.Min.Y
+                let mutable size = v2i b.Size.X b.Size.Y
+                let minEdited = ImGui.DragInt2 (nameof b.Min, &min.X, context.SnapDrag)
+                if ImGui.IsItemFocused () then context.FocusProperty ()
+                let sizeEdited = ImGui.DragInt2 (nameof b.Size, &size.X, context.SnapDrag)
+                if ImGui.IsItemFocused () then context.FocusProperty ()
+                ImGui.Unindent ()
+                ImGui.PopID ()
+                (false, minEdited || sizeEdited, box2i min size :> obj)
+            | :? Box3i as b ->
+                ImGui.Text name
+                ImGui.PushID name
+                ImGui.Indent ()
+                let mutable min = v3i b.Min.X b.Min.Y b.Min.Z
+                let mutable size = v3i b.Size.X b.Size.Y b.Size.Z
+                let minEdited = ImGui.DragInt3 (nameof b.Min, &min.X, context.SnapDrag)
+                if ImGui.IsItemFocused () then context.FocusProperty ()
+                let sizeEdited = ImGui.DragInt3 (nameof b.Size, &size.X, context.SnapDrag)
+                if ImGui.IsItemFocused () then context.FocusProperty ()
+                ImGui.Unindent ()
+                ImGui.PopID ()
+                (false, minEdited || sizeEdited, box3i min size :> obj)
+            | :? Quaternion as q ->
+                let mutable v = v4 q.X q.Y q.Z q.W
+                let result = (false, ImGui.DragFloat4 (name, &v, context.SnapDrag), quat v.X v.Y v.Z v.W :> obj)
+                if ImGui.IsItemFocused () then context.FocusProperty ()
+                result
+            | :? Frustum as frustum ->
+                let mutable frustumStr = string frustum
+                (false, ImGui.InputText (name, &frustumStr, 4096u, ImGuiInputTextFlags.ReadOnly), frustum :> obj)
+            | :? Color as c ->
+                let mutable v = v4 c.R c.G c.B c.A
+                let result = (false, ImGui.ColorEdit4 (name, &v), color v.X v.Y v.Z v.W :> obj)
+                if ImGui.IsItemFocused () then context.FocusProperty ()
+                result
+            | :? Transition as transition ->
+                World.imGuiEditPropertyRecord true name (typeof<Transition>) transition context world
+            | :? Slide as slide ->
+                World.imGuiEditPropertyRecord true name (typeof<Slide>) slide context world
+            | :? RenderStyle as style ->
+                let mutable index = match style with Deferred -> 0 | Forward _ -> 1
+                let (edited, style) =
+                    if ImGui.Combo (name, &index, [|nameof Deferred; nameof Forward|], 2)
+                    then (true, match index with 0 -> Deferred | 1 -> Forward (0.0f, 0.0f) | _ -> failwithumf ())
+                    else (false, style)
+                if ImGui.IsItemFocused () then context.FocusProperty ()
+                let (edited, style) =
+                    match index with
+                    | 0 -> (edited, style)
+                    | 1 ->
+                        match style with
+                        | Deferred -> failwithumf ()
+                        | Forward (subsort, sort) ->
+                            let mutable (subsort, sort) = (subsort, sort)
+                            ImGui.Indent ()
+                            let subsortEdited = ImGui.DragFloat ("Subsort via " + name, &subsort, context.SnapDrag)
+                            if ImGui.IsItemFocused () then context.FocusProperty ()
+                            let sortEdited = ImGui.DragFloat ("Sort via " + name, &sort, context.SnapDrag)
+                            if ImGui.IsItemFocused () then context.FocusProperty ()
+                            ImGui.Unindent ()
+                            (edited || subsortEdited || sortEdited, Forward (subsort, sort))
+                    | _ -> failwithumf ()
+                (false, edited, style :> obj)
+            | :? LightType as light ->
+                let mutable index = light.Enumerate
+                let (edited, light) =
+                    let names = LightType.Names
+                    if ImGui.Combo (name, &index, names, names.Length)
+                    then (true, LightType.makeFromEnumeration index)
+                    else (false, light)
+                if ImGui.IsItemFocused () then context.FocusProperty ()
+                let (edited, light) =
+                    match index with
+                    | 0 ->
+                        match light with
+                        | PointLight radius ->
+                            let mutable radius = radius
+                            ImGui.Indent ()
+                            let radiusEdited = ImGui.DragFloat ("Radius via " + name, &radius, context.SnapDrag)
+                            if ImGui.IsItemFocused () then context.FocusProperty ()
+                            ImGui.Unindent ()
+                            (edited || radiusEdited, PointLight radius)
+                        | SpotLight (_, _, _) | DirectionalLight _ | CascadedLight -> failwithumf ()
+                    | 1 ->
+                        match light with
+                        | SpotLight (radius, innerCone, outerCone) ->
+                            let mutable (radius, innerCone, outerCone) = (radius, innerCone, outerCone)
+                            ImGui.Indent ()
+                            let radiusEdited = ImGui.DragFloat ("Radius via " + name, &radius, context.SnapDrag)
+                            if ImGui.IsItemFocused () then context.FocusProperty ()
+                            let innerConeEdited = ImGui.DragFloat ("InnerCone via " + name, &innerCone, context.SnapDrag)
+                            if ImGui.IsItemFocused () then context.FocusProperty ()
+                            let outerConeEdited = ImGui.DragFloat ("OuterCone via " + name, &outerCone, context.SnapDrag)
+                            if ImGui.IsItemFocused () then context.FocusProperty ()
+                            ImGui.Unindent ()
+                            (edited || radiusEdited || innerConeEdited || outerConeEdited, SpotLight (radius, innerCone, outerCone))
+                        | PointLight _ | DirectionalLight _ | CascadedLight -> failwithumf ()
+                    | 2 ->
+                        match light with
+                        | DirectionalLight offsetForwardScalar ->
+                            let mutable offsetForwardScalar = offsetForwardScalar
+                            ImGui.Indent ()
+                            let forwardOffsetScalarEdited = ImGui.DragFloat ("Forward Offset Scalar via " + name, &offsetForwardScalar, context.SnapDrag)
+                            if ImGui.IsItemFocused () then context.FocusProperty ()
+                            ImGui.Unindent ()
+                            (edited || forwardOffsetScalarEdited, DirectionalLight offsetForwardScalar)
+                        | PointLight _ | SpotLight (_, _, _) | CascadedLight -> failwithumf ()
+                    | 3 ->
+                        match light with
+                        | CascadedLight -> (edited, light)
+                        | PointLight _ | SpotLight (_, _, _) | DirectionalLight _ -> failwithumf ()
+                    | _ -> failwithumf ()
+                (false, edited, light :> obj)
+            | :? Substance as substance ->
+                let mutable scalar = match substance with Mass m -> m | Density d -> d
+                let edited = ImGui.DragFloat ("##scalar via " + name, &scalar, context.SnapDrag)
+                if ImGui.IsItemFocused () then context.FocusProperty ()
+                let mutable index = match substance with Mass _ -> 0 | Density _ -> 1
+                ImGui.SameLine ()
+                let (edited, substance) =
+                    if ImGui.Combo (name, &index, [|nameof Mass; nameof Density|], 2) || edited then
+                        let substance = match index with 0 -> Mass scalar | 1 -> Density scalar | _ -> failwithumf ()
+                        (true, substance :> obj)
+                    else (false, substance :> obj)
+                if ImGui.IsItemFocused () then context.FocusProperty ()
+                (false, edited, substance)
+            | :? Animation as animation ->
+                let tryReplaceAnimationName (fieldInfo : PropertyInfo) (field : obj) =
+                    match (fieldInfo.Name, context.SelectedEntityOpt) with
+                    | ("Name", Some selectedEntity) ->
+                        match selectedEntity.TryGetProperty "AnimatedModel" world with // HACK: can only get related asset tag from selected entity's top-level.
+                        | Some property when (property.PropertyValue :? AnimatedModel AssetTag) ->
+                            let animatedModel = property.PropertyValue :?> AnimatedModel AssetTag
+                            match Metadata.tryGetAnimatedModelMetadata animatedModel with
+                            | ValueSome metadata when metadata.SceneOpt.IsSome ->
+                                let animationNames = metadata.SceneOpt.Value.Animations |> Seq.rev |> Seq.map _.Name // NOTE: for some reason, Assimp seems to store animations in reverse order.
+                                let mutable animationName = field :?> string
+                                let mutable animationNameEdited = false
+                                if ImGui.BeginCombo (name, animationName) then
+                                    for animationName' in animationNames do
+                                        if String.notEmpty animationName' && ImGui.Selectable (animationName', (animationName' = animationName)) then
+                                            if animationName <> animationName' then
+                                                animationName <- animationName'
+                                                animationNameEdited <- true
+                                    ImGui.EndCombo ()
+                                if ImGui.IsItemFocused () then context.FocusProperty ()
+                                Some (animationNameEdited, animationName :> obj)
+                            | ValueSome _ | ValueNone -> None
+                        | Some _ | None -> None
+                    | _ -> None
+                World.imGuiEditPropertyRecordPlus tryReplaceAnimationName true name (typeof<Animation>) animation context world
+            | :? UserDefinedImages as images ->
+                let tryReplaceUserDefinedImageOpt (fieldInfo : PropertyInfo) (field : obj) =
+                    match context.SelectedEntityOpt with
+                    | Some selectedEntity ->
+                        let userDefinedImageSubstring = "UserDefinedImage"
+                        if fieldInfo.Name.StartsWith userDefinedImageSubstring then
+                            let indexStr = fieldInfo.Name.Substring (userDefinedImageSubstring.Length, fieldInfo.Name.Length - userDefinedImageSubstring.Length)
+                            let indexOpt =
+                                match Int32.TryParse indexStr with
+                                | (true, number) -> Some number
+                                | (false, _) -> None
+                            match indexOpt with
+                            | Some index ->
+                                let pipelineName =
+                                    match selectedEntity.TryGetProperty "PipelineName" world with
+                                    | Some property when (property.PropertyValue :? string) -> property.PropertyValue :?> string
+                                    | Some _ | None -> Constants.Render.PipelineNameDefault
+                                let descriptors = World.getUserDefinedPipeline2dDescriptors world
+                                match descriptors.TryGetValue pipelineName with
+                                | (true, pipelineDescriptor) ->
+                                    let imageNames = pipelineDescriptor.UserDefinedImageNames
+                                    if index < imageNames.Length then
+                                        ImGui.PushID name
+                                        let mutable value = field
+                                        let mutable valueStr = scstring value
+                                        let valueEdited = ImGui.InputText (imageNames[index], &valueStr, 4096u)
+                                        try let value = scvalue<Image AssetTag> valueStr
+                                            if ImGui.IsItemFocused () then context.FocusProperty ()
+                                            ImGui.PopID ()
+                                            Some (valueEdited, value :> obj)
+                                        with _ -> Some (false, field)
+                                    else Some (false, field)
+                                | (false, _) -> Some (false, field)
+                            | None -> Some (false, field)
+                        else None
+                    | None -> None
+                World.imGuiEditPropertyRecordPlus tryReplaceUserDefinedImageOpt false name (typeof<UserDefinedImages>) images context world
+            | :? UserDefinedSettings as settings ->
+                let tryReplaceUserDefinedSettingOpt (fieldInfo : PropertyInfo) (field : obj) =
+                    match context.SelectedEntityOpt with
+                    | Some selectedEntity ->
+                        let userDefinedSettingSubstring = "UserDefinedSetting"
+                        if fieldInfo.Name.StartsWith userDefinedSettingSubstring then
+                            let indexStr = fieldInfo.Name.Substring (userDefinedSettingSubstring.Length, fieldInfo.Name.Length - userDefinedSettingSubstring.Length)
+                            let indexOpt =
+                                match Int32.TryParse indexStr with
+                                | (true, number) -> Some number
+                                | (false, _) -> None
+                            match indexOpt with
+                            | Some index ->
+                                let pipelineName =
+                                    match selectedEntity.TryGetProperty "PipelineName" world with
+                                    | Some property when (property.PropertyValue :? string) -> property.PropertyValue :?> string
+                                    | Some _ | None -> Constants.Render.PipelineNameDefault
+                                let descriptors = World.getUserDefinedPipeline2dDescriptors world
+                                match descriptors.TryGetValue pipelineName with
+                                | (true, pipelineDescriptor) ->
+                                    let settingNames = pipelineDescriptor.UserDefinedSettingNames
+                                    if index < settingNames.Length then
+                                        ImGui.PushID name
+                                        let mutable value = field :?> single
+                                        let valueEdited = ImGui.DragFloat (settingNames[index], &value, context.SnapDrag)
+                                        if ImGui.IsItemFocused () then context.FocusProperty ()
+                                        ImGui.PopID ()
+                                        Some (valueEdited, value :> obj)
+                                    else Some (false, field)
+                                | (false, _) -> Some (false, field)
+                            | None -> Some (false, field)
+                        else None
+                    | None -> None
+                World.imGuiEditPropertyRecordPlus tryReplaceUserDefinedSettingOpt false name (typeof<UserDefinedSettings>) settings context world
+            | :? TerrainMaterialProperties as tmps ->
+                let tryReplaceUserDefinedSettingOpt (fieldInfo : PropertyInfo) (field : obj) =
+                    match context.SelectedEntityOpt with
+                    | Some selectedEntity ->
+                        let userDefinedSettingSubstring = "UserDefinedSetting"
+                        let optSubstring = "Opt"
+                        if fieldInfo.Name.StartsWith userDefinedSettingSubstring && fieldInfo.Name.EndsWith optSubstring then
+                            let indexStr = fieldInfo.Name.Substring (userDefinedSettingSubstring.Length, fieldInfo.Name.Length - userDefinedSettingSubstring.Length - optSubstring.Length)
+                            let indexOpt =
+                                match Int32.TryParse indexStr with
+                                | (true, number) -> Some number
+                                | (false, _) -> None
+                            match indexOpt with
+                            | Some index ->
+                                let pipelineName =
+                                    match selectedEntity.TryGetProperty "TerrainMaterial" world with
+                                    | Some property when (property.PropertyValue :? TerrainMaterial) ->
+                                        let material = property.PropertyValue :?> TerrainMaterial
+                                        match material with
+                                        | FlatMaterial material -> material.PipelineName
+                                        | BlendMaterial material -> material.PipelineName
+                                    | Some _ | None -> Constants.Render.PipelineNameDefault
+                                let descriptors = World.getUserDefinedPipeline3dDescriptors world
+                                match descriptors.TryGetValue pipelineName with
+                                | (true, pipelineDescriptor) ->
+                                    let settingNames = pipelineDescriptor.UserDefinedSettingNames
+                                    if index < settingNames.Length then
+                                        let mutable valueOpt = field :?> single option
+                                        let mutable isSome = valueOpt.IsSome
+                                        let isSomeEdited = ImGui.Checkbox ("##" + settingNames[index], &isSome)
+                                        if ImGui.IsItemFocused () then context.FocusProperty ()
+                                        if isSomeEdited then
+                                            if isSome
+                                            then valueOpt <- Some 0.0f
+                                            else valueOpt <- None
+                                        match valueOpt with
+                                        | Some value ->
+                                            ImGui.SameLine ()
+                                            ImGui.PushID name
+                                            let mutable value = value
+                                            let valueEdited = ImGui.DragFloat (settingNames[index], &value, context.SnapDrag)
+                                            if ImGui.IsItemFocused () then context.FocusProperty ()
+                                            ImGui.PopID ()
+                                            Some (isSomeEdited || valueEdited, Some value :> obj)
+                                        | None ->
+                                            ImGui.SameLine ()
+                                            ImGui.Text settingNames[index]
+                                            Some (isSomeEdited, valueOpt :> obj)
+                                    else Some (false, field)
+                                | (false, _) -> Some (false, field)
+                            | None -> Some (false, field)
+                        else None
+                    | None -> None
+                World.imGuiEditPropertyRecordPlus tryReplaceUserDefinedSettingOpt true name (typeof<TerrainMaterialProperties>) tmps context world
+            | :? Material as material ->
+                let tryReplaceUserDefinedImageOpt (fieldInfo : PropertyInfo) (field : obj) =
+                    match context.SelectedEntityOpt with
+                    | Some selectedEntity ->
+                        let userDefinedImageSubstring = "UserDefinedImage"
+                        let optSubstring = "Opt"
+                        if fieldInfo.Name.StartsWith userDefinedImageSubstring && fieldInfo.Name.EndsWith optSubstring then
+                            let indexStr = fieldInfo.Name.Substring (userDefinedImageSubstring.Length, fieldInfo.Name.Length - userDefinedImageSubstring.Length - optSubstring.Length)
+                            let indexOpt =
+                                match Int32.TryParse indexStr with
+                                | (true, number) -> Some number
+                                | (false, _) -> None
+                            match indexOpt with
+                            | Some index ->
+                                let pipelineName =
+                                    match material.PipelineNameOpt with
+                                    | ValueSome pipelineName -> pipelineName
+                                    | ValueNone ->
+                                        let surfaceIndex =
+                                            match selectedEntity.TryGetProperty "SurfaceIndex" world with
+                                            | Some property when (property.PropertyValue :? int) -> property.PropertyValue :?> int
+                                            | Some _ | None -> 0 // NOTE: hard-coding first surface.
+                                        match selectedEntity.TryGetProperty "StaticModel" world with
+                                        | Some property when (property.PropertyValue :? StaticModel AssetTag) ->
+                                            let staticModel = property.PropertyValue :?> StaticModel AssetTag
+                                            match Metadata.tryGetStaticModelPipelineName surfaceIndex staticModel with
+                                            | ValueSome pipelineName -> pipelineName
+                                            | ValueNone -> Constants.Render.PipelineNameDefault
+                                        | Some _ | None ->
+                                            match selectedEntity.TryGetProperty "AnimatedModel" world with
+                                            | Some property when (property.PropertyValue :? AnimatedModel AssetTag) ->
+                                                let animatedModel = property.PropertyValue :?> AnimatedModel AssetTag
+                                                match Metadata.tryGetAnimatedModelPipelineName surfaceIndex animatedModel with
+                                                | ValueSome pipelineName -> pipelineName
+                                                | ValueNone -> Constants.Render.PipelineNameDefault
+                                            | Some _ | None -> Constants.Render.PipelineNameDefault
+                                let descriptors = World.getUserDefinedPipeline3dDescriptors world
+                                match descriptors.TryGetValue pipelineName with
+                                | (true, pipelineDescriptor) ->
+                                    let imageNames = pipelineDescriptor.UserDefinedImageNames
+                                    if index < imageNames.Length then
+                                        let asset index : Image AssetTag =
+                                            match index with
+                                            | 0 -> Assets.Default.UserDefinedImage0
+                                            | 1 -> Assets.Default.UserDefinedImage1
+                                            | 2 -> Assets.Default.UserDefinedImage2
+                                            | _ -> failwithumf ()
+                                        let mutable valueOpt = field :?> Image AssetTag voption
+                                        let mutable isSome = valueOpt.IsSome
+                                        let isSomeEdited = ImGui.Checkbox ("##" + imageNames[index], &isSome)
+                                        if ImGui.IsItemFocused () then context.FocusProperty ()
+                                        if isSomeEdited then
+                                            if isSome
+                                            then valueOpt <- ValueSome (asset index)
+                                            else valueOpt <- ValueNone
+                                        match valueOpt with
+                                        | ValueSome value ->
+                                            ImGui.SameLine ()
+                                            ImGui.PushID name
+                                            let mutable value = value
+                                            let mutable valueStr = scstring value
+                                            let valueEdited = ImGui.InputText (imageNames[index], &valueStr, 4096u)
+                                            try let value = scvalue<Image AssetTag> valueStr
+                                                if ImGui.IsItemFocused () then context.FocusProperty ()
+                                                ImGui.PopID ()
+                                                Some (isSomeEdited || valueEdited, ValueSome value :> obj)
+                                            with _ -> Some (false, field)
+                                        | ValueNone ->
+                                            ImGui.SameLine ()
+                                            ImGui.Text imageNames[index]
+                                            Some (isSomeEdited, valueOpt :> obj)
+                                    else Some (false, field)
+                                | (false, _) -> Some (false, field)
+                            | None -> Some (false, field)
+                        elif fieldInfo.Name = nameof material.PipelineNameOpt then
+                            let mutable pipelineNameOpt = field :?> string voption
+                            let mutable isSome = pipelineNameOpt.IsSome
+                            let isSomeEdited = ImGui.Checkbox ("##" + fieldInfo.Name, &isSome)
+                            if ImGui.IsItemFocused () then context.FocusProperty ()
+                            if isSomeEdited then
+                                if isSome
+                                then pipelineNameOpt <- ValueSome Constants.Render.PipelineNameDefault
+                                else pipelineNameOpt <- ValueNone
+                            match pipelineNameOpt with
+                            | ValueSome pipelineName ->
+                                ImGui.SameLine ()
+                                ImGui.PushID name
+                                let descriptors = World.getUserDefinedPipeline3dDescriptors world
+                                let pipelineNames = seq { Constants.Render.PipelineNameDefault; yield! descriptors.Keys }
+                                let mutable pipelineNameEdited = false
+                                if ImGui.BeginCombo (name, pipelineName) then
+                                    for pipelineName' in pipelineNames do
+                                        if String.notEmpty pipelineName' && ImGui.Selectable (pipelineName', (pipelineName' = pipelineName)) then
+                                            if pipelineName <> pipelineName' then
+                                                pipelineNameOpt <- ValueSome pipelineName'
+                                                pipelineNameEdited <- true
+                                    ImGui.EndCombo ()
+                                if ImGui.IsItemFocused () then context.FocusProperty ()
+                                ImGui.PopID ()
+                                Some (isSomeEdited || pipelineNameEdited, pipelineNameOpt :> obj)
+                            | ValueNone ->
+                                ImGui.SameLine ()
+                                ImGui.Text name
+                                Some (isSomeEdited, pipelineNameOpt :> obj)
+                        else None
+                    | None -> None
+                World.imGuiEditPropertyRecordPlus tryReplaceUserDefinedImageOpt false name (typeof<Material>) material context world
+            | :? MaterialProperties as properties ->
+                let tryReplaceUserDefinedSettingOpt (fieldInfo : PropertyInfo) (field : obj) =
+                    match context.SelectedEntityOpt with
+                    | Some selectedEntity ->
+                        let userDefinedSettingSubstring = "UserDefinedSetting"
+                        let optSubstring = "Opt"
+                        if fieldInfo.Name.StartsWith userDefinedSettingSubstring && fieldInfo.Name.EndsWith optSubstring then
+                            let indexStr = fieldInfo.Name.Substring (userDefinedSettingSubstring.Length, fieldInfo.Name.Length - userDefinedSettingSubstring.Length - optSubstring.Length)
+                            let indexOpt =
+                                match Int32.TryParse indexStr with
+                                | (true, number) -> Some number
+                                | (false, _) -> None
+                            match indexOpt with
+                            | Some index ->
+                                let pipelineName =
+                                    match selectedEntity.TryGetProperty "Material" world with
+                                    | Some property when (property.PropertyValue :? Material) ->
+                                        let material = property.PropertyValue :?> Material
+                                        match material.PipelineNameOpt with
+                                        | ValueSome pipelineName -> pipelineName
+                                        | ValueNone ->
+                                            let surfaceIndex =
+                                                match selectedEntity.TryGetProperty "SurfaceIndex" world with
+                                                | Some property when (property.PropertyValue :? int) -> property.PropertyValue :?> int
+                                                | Some _ | None -> 0 // NOTE: hard-coding first surface.
+                                            match selectedEntity.TryGetProperty "StaticModel" world with
+                                            | Some property when (property.PropertyValue :? StaticModel AssetTag) ->
+                                                let staticModel = property.PropertyValue :?> StaticModel AssetTag
+                                                match Metadata.tryGetStaticModelPipelineName surfaceIndex staticModel with
+                                                | ValueSome pipelineName -> pipelineName
+                                                | ValueNone -> Constants.Render.PipelineNameDefault
+                                            | Some _ | None ->
+                                                match selectedEntity.TryGetProperty "AnimatedModel" world with
+                                                | Some property when (property.PropertyValue :? AnimatedModel AssetTag) ->
+                                                    let animatedModel = property.PropertyValue :?> AnimatedModel AssetTag
+                                                    match Metadata.tryGetAnimatedModelPipelineName surfaceIndex animatedModel with
+                                                    | ValueSome pipelineName -> pipelineName
+                                                    | ValueNone -> Constants.Render.PipelineNameDefault
+                                                | Some _ | None -> Constants.Render.PipelineNameDefault
+                                    | Some _ | None -> Constants.Render.PipelineNameDefault
+                                let descriptors = World.getUserDefinedPipeline3dDescriptors world
+                                match descriptors.TryGetValue pipelineName with
+                                | (true, pipelineDescriptor) ->
+                                    let settingNames = pipelineDescriptor.UserDefinedSettingNames
+                                    if index < settingNames.Length then
+                                        let mutable valueOpt = field :?> single voption
+                                        let mutable isSome = valueOpt.IsSome
+                                        let isSomeEdited = ImGui.Checkbox ("##" + settingNames[index], &isSome)
+                                        if ImGui.IsItemFocused () then context.FocusProperty ()
+                                        if isSomeEdited then
+                                            if isSome
+                                            then valueOpt <- ValueSome 0.0f
+                                            else valueOpt <- ValueNone
+                                        match valueOpt with
+                                        | ValueSome value ->
+                                            ImGui.SameLine ()
+                                            ImGui.PushID name
+                                            let mutable value = value
+                                            let valueEdited = ImGui.DragFloat (settingNames[index], &value, context.SnapDrag)
+                                            if ImGui.IsItemFocused () then context.FocusProperty ()
+                                            ImGui.PopID ()
+                                            Some (isSomeEdited || valueEdited, ValueSome value :> obj)
+                                        | ValueNone ->
+                                            ImGui.SameLine ()
+                                            ImGui.Text settingNames[index]
+                                            Some (isSomeEdited, valueOpt :> obj)
+                                    else Some (false, field)
+                                | (false, _) -> Some (false, field)
+                            | None -> Some (false, field)
+                        else None
+                    | None -> None
+                World.imGuiEditPropertyRecordPlus tryReplaceUserDefinedSettingOpt false name (typeof<MaterialProperties>) properties context world
+            | :? Justification as justification ->
+                let (_, caseNameEdited, caseName) = World.imGuiSelectCase name ty justification context
+                let justification =
+                    if caseNameEdited then
+                        match caseName with
+                        | nameof Justified -> Justified (JustifyCenter, JustifyMiddle)
+                        | nameof Unjustified -> Unjustified true
+                        | _ -> failwithumf ()
+                    else justification
+                ImGui.Indent ()
+                let (edited, justification) =
+                    match justification with
+                    | Unjustified wrapped ->
+                        let (_, edited, wrapped) = World.imGuiEditProperty "Wrapped" (getType wrapped) wrapped context world
+                        (caseNameEdited || edited, Unjustified (wrapped :?> bool))
+                    | Justified (h, v) ->
+                        let (_, edited, h) = World.imGuiEditProperty "JustificationH" (getType h) h context world
+                        let (_, edited2, v) = World.imGuiEditProperty "JustificationV" (getType v) v context world
+                        ImGui.Text "(wrapping unavailable when justified)"
+                        (caseNameEdited || edited || edited2, Justified (h :?> JustificationHorizontal, v :?> JustificationVertical))
+                ImGui.Unindent ()
+                (false, edited, justification)
+            | :? FlowLimit as limit ->
+                let (_, caseNameEdited, caseName) = World.imGuiSelectCase name ty limit context
+                let limit =
+                    if caseNameEdited then
+                        match caseName with
+                        | nameof FlowParent -> FlowParent
+                        | nameof FlowUnlimited -> FlowUnlimited
+                        | nameof FlowTo -> FlowTo 32.0f
+                        | _ -> failwithumf ()
+                    else limit
+                ImGui.Indent ()
+                let (edited, value) =
+                    match limit with
+                    | FlowParent -> (caseNameEdited, limit)
+                    | FlowUnlimited -> (caseNameEdited, limit)
+                    | FlowTo limit ->
+                        let (_, edited, limit) = World.imGuiEditProperty "Limit" (getType limit) limit context world
+                        (caseNameEdited || edited, FlowTo (limit :?> single))
+                ImGui.Unindent ()
+                (false, edited, value)
+            | :? Gravity as gravity ->
+                let (_, caseNameEdited, caseName) = World.imGuiSelectCase name ty gravity context
+                let gravity =
+                    if caseNameEdited then
+                        match caseName with
+                        | nameof GravityWorld -> GravityWorld
+                        | nameof GravityOverride -> GravityOverride Constants.Physics.GravityDefault
+                        | nameof GravityScale -> GravityScale 1.0f
+                        | nameof GravityIgnore -> GravityIgnore
+                        | _ -> failwithumf ()
+                    else gravity
+                ImGui.Indent ()
+                let (edited, gravity) =
+                    match gravity with
+                    | GravityWorld -> (caseNameEdited, gravity)
+                    | GravityOverride gravity ->
+                        let (_, edited, gravity) = World.imGuiEditProperty "Gravity" (getType gravity) gravity context world
+                        (caseNameEdited || edited, GravityOverride (gravity :?> Vector3))
+                    | GravityScale scale ->
+                        let (_, edited, scale) = World.imGuiEditProperty "Scale" (getType scale) scale context world
+                        (caseNameEdited || edited, GravityScale (scale :?> single))
+                    | GravityIgnore -> (caseNameEdited, gravity)
+                ImGui.Unindent ()
+                (false, edited, gravity)
+            | :? Layout as layout ->
+                let (_, caseNameEdited, caseName) = World.imGuiSelectCase name ty layout context
+                let layout =
+                    if caseNameEdited then
+                        match caseName with
+                        | nameof Flow -> Flow (FlowDownward, FlowParent)
+                        | nameof Dock -> Dock (v4Dup 8.0f, false, true)
+                        | nameof Grid -> Grid (v2iDup 2, None, true)
+                        | nameof Manual -> Manual
+                        | _ -> failwithumf ()
+                    else layout
+                ImGui.Indent ()
+                let (edited, layout) =
+                    match layout with // NOTE: we explicitly ignore any promotions that would take place here because we should be safe to presume there are none.
+                    | Flow (direction, limit) ->
+                        let (_, edited, direction) = World.imGuiEditProperty "FlowDirection" (getType direction) direction context world
+                        if direction = FlowLeftward || direction = FlowUpward then ImGui.SameLine (); ImGui.Text "(not implemented)" // TODO: P1: remove this line when implemented.
+                        let (_, edited2, limit) = World.imGuiEditProperty "FlowLimit" (getType limit) limit context world
+                        (caseNameEdited || edited || edited2, Flow (direction :?> FlowDirection, limit :?> FlowLimit))
+                    | Dock (margins, percentageBased, resizeChildren) ->
+                        let (_, edited, margins) = World.imGuiEditProperty "Margins" (getType margins) margins context world
+                        let (_, edited2, percentageBased) = World.imGuiEditProperty "PercentageBased" (getType percentageBased) percentageBased context world
+                        ImGui.SameLine (); ImGui.Text "(not implemented)" // TODO: P1: remove this line when implemented.
+                        let (_, edited3, resizeChildren) = World.imGuiEditProperty "ResizeChildren" (getType resizeChildren) resizeChildren context world
+                        ImGui.SameLine (); ImGui.Text "(not implemented)" // TODO: P1: remove this line when implemented.
+                        (caseNameEdited || edited || edited2 || edited3, Dock (margins :?> Vector4, percentageBased :?> bool, resizeChildren :?> bool))
+                    | Grid (dims, flowDirectionOpt, resizeChildren) ->
+                        let (_, edited, dims) = World.imGuiEditProperty "Dims" (getType dims) dims context world
+                        let (_, edited2, flowDirectionOpt) = World.imGuiEditProperty "FlowDirectionOpt" (getType flowDirectionOpt) flowDirectionOpt context world
+                        let (_, edited3, resizeChildren) = World.imGuiEditProperty "ResizeChildren" (getType resizeChildren) resizeChildren context world
+                        (caseNameEdited || edited || edited2 || edited3, Grid (dims :?> Vector2i, flowDirectionOpt :?> FlowDirection option, resizeChildren :?> bool))
+                    | Manual -> (caseNameEdited, layout)
+                ImGui.Unindent ()
+                (false, edited, layout)
+            | :? Lighting3dConfig as lighting3dConfig ->
+                let mutable lighting3dEdited = false
+                let mutable lightCutoffMargin = lighting3dConfig.LightCutoffMargin
+                let mutable lightAmbientBoostCutoff = lighting3dConfig.LightAmbientBoostCutoff
+                let mutable lightAmbientBoostScalar = lighting3dConfig.LightAmbientBoostScalar
+                let mutable lightShadowSamples = lighting3dConfig.LightShadowSamples
+                let mutable lightShadowBias = lighting3dConfig.LightShadowBias
+                let mutable lightShadowSampleScalar = lighting3dConfig.LightShadowSampleScalar
+                let mutable lightShadowExponent = lighting3dConfig.LightShadowExponent
+                let mutable lightShadowRadius = lighting3dConfig.LightShadowRadius
+                let mutable lightShadowDensity = lighting3dConfig.LightShadowDensity
+                let mutable lightMapSingletonBlendMargin = lighting3dConfig.LightMapSingletonBlendMargin
+                let mutable lightExposure = lighting3dConfig.LightExposure
+                let mutable toneMapType = lighting3dConfig.ToneMapType.Enumerate
+                let mutable toneMapSlope = lighting3dConfig.ToneMapSlope
+                let mutable toneMapOffset = lighting3dConfig.ToneMapOffset
+                let mutable toneMapPower = lighting3dConfig.ToneMapPower
+                let mutable toneMapSaturation = lighting3dConfig.ToneMapSaturation
+                let mutable toneMapWhitePoint = lighting3dConfig.ToneMapWhitePoint
+                let mutable fogEnabled = lighting3dConfig.FogEnabled
+                let mutable fogType = lighting3dConfig.FogType.Enumerate
+                let mutable fogStart = lighting3dConfig.FogStart
+                let mutable fogFinish = lighting3dConfig.FogFinish
+                let mutable fogDensity = lighting3dConfig.FogDensity
+                let mutable fogColor = let color = lighting3dConfig.FogColor in color.V4
+                let mutable sssEnabled = lighting3dConfig.SssEnabled
+                let mutable ssaoEnabled = lighting3dConfig.SsaoEnabled
+                let mutable ssaoIntensity = lighting3dConfig.SsaoIntensity
+                let mutable ssaoBias = lighting3dConfig.SsaoBias
+                let mutable ssaoRadius = lighting3dConfig.SsaoRadius
+                let mutable ssaoDistanceMax = lighting3dConfig.SsaoDistanceMax
+                let mutable ssvfEnabled = lighting3dConfig.SsvfEnabled
+                let mutable ssvfIntensity = lighting3dConfig.SsvfIntensity
+                let mutable ssvfSteps = lighting3dConfig.SsvfSteps
+                let mutable ssvfAsymmetry = lighting3dConfig.SsvfAsymmetry
+                let mutable ssrlEnabled = lighting3dConfig.SsrlEnabled
+                let mutable ssrlIntensity = lighting3dConfig.SsrlIntensity
+                let mutable ssrlDetail = lighting3dConfig.SsrlDetail
+                let mutable ssrlRefinementsMax = lighting3dConfig.SsrlRefinementsMax
+                let mutable ssrlRayThickness = lighting3dConfig.SsrlRayThickness
+                let mutable ssrlTowardEyeCutoff = lighting3dConfig.SsrlTowardEyeCutoff
+                let mutable ssrlDepthCutoff = lighting3dConfig.SsrlDepthCutoff
+                let mutable ssrlDepthCutoffMargin = lighting3dConfig.SsrlDepthCutoffMargin
+                let mutable ssrlDistanceCutoff = lighting3dConfig.SsrlDistanceCutoff
+                let mutable ssrlDistanceCutoffMargin = lighting3dConfig.SsrlDistanceCutoffMargin
+                let mutable ssrlRoughnessCutoff = lighting3dConfig.SsrlRoughnessCutoff
+                let mutable ssrlRoughnessCutoffMargin = lighting3dConfig.SsrlRoughnessCutoffMargin
+                let mutable ssrlSlopeCutoff = lighting3dConfig.SsrlSlopeCutoff
+                let mutable ssrlSlopeCutoffMargin = lighting3dConfig.SsrlSlopeCutoffMargin
+                let mutable ssrlEdgeHorizontalMargin = lighting3dConfig.SsrlEdgeHorizontalMargin
+                let mutable ssrlEdgeVerticalMargin = lighting3dConfig.SsrlEdgeVerticalMargin
+                let mutable ssrrEnabled = lighting3dConfig.SsrrEnabled
+                let mutable ssrrIntensity = lighting3dConfig.SsrrIntensity
+                let mutable ssrrDetail = lighting3dConfig.SsrrDetail
+                let mutable ssrrRefinementsMax = lighting3dConfig.SsrrRefinementsMax
+                let mutable ssrrRayThickness = lighting3dConfig.SsrrRayThickness
+                let mutable ssrrDistanceCutoff = lighting3dConfig.SsrrDistanceCutoff
+                let mutable ssrrDistanceCutoffMargin = lighting3dConfig.SsrrDistanceCutoffMargin
+                let mutable ssrrEdgeHorizontalMargin = lighting3dConfig.SsrrEdgeHorizontalMargin
+                let mutable ssrrEdgeVerticalMargin = lighting3dConfig.SsrrEdgeVerticalMargin
+                let mutable bloomEnabled = lighting3dConfig.BloomEnabled
+                let mutable bloomStrength = lighting3dConfig.BloomStrength
+                let mutable bloomThreshold = lighting3dConfig.BloomThreshold
+                let mutable bloomKarisAverageEnabled = lighting3dConfig.BloomKarisAverageEnabled
+                let mutable bloomFilterRadius = lighting3dConfig.BloomFilterRadius
+                let mutable depthOfFieldEnabled = lighting3dConfig.DepthOfFieldEnabled
+                let mutable depthOfFieldNearDistance = lighting3dConfig.DepthOfFieldNearDistance
+                let mutable depthOfFieldFarDistance = lighting3dConfig.DepthOfFieldFarDistance
+                let mutable depthOfFieldRadius = lighting3dConfig.DepthOfFieldRadius
+                let mutable depthOfFieldFocalType = lighting3dConfig.DepthOfFieldFocalType.Enumerate
+                let mutable depthOfFieldFocalDistance = lighting3dConfig.DepthOfFieldFocalDistance
+                let mutable depthOfFieldFocalPoint = lighting3dConfig.DepthOfFieldFocalPoint
+                let mutable chromaticAberrationEnabled = lighting3dConfig.ChromaticAberrationEnabled
+                let mutable chromaticAberrationChannelOffsets = lighting3dConfig.ChromaticAberrationChannelOffsets
+                let mutable chromaticAberrationFocalPoint = lighting3dConfig.ChromaticAberrationFocalPoint
+                ImGui.Text "Light and Shadows"
+                lighting3dEdited <- ImGui.SliderFloat ("Light Cutoff Margin", &lightCutoffMargin, 0.0f, 1.0f) || lighting3dEdited; if ImGui.IsItemFocused () then context.FocusProperty ()
+                lighting3dEdited <- ImGui.SliderFloat ("Light Ambient Boost Cutoff", &lightAmbientBoostCutoff, 0.0f, 1.0f) || lighting3dEdited; if ImGui.IsItemFocused () then context.FocusProperty ()
+                lighting3dEdited <- ImGui.SliderFloat ("Light Ambient Boost Scalar", &lightAmbientBoostScalar, 0.0f, 5.0f) || lighting3dEdited; if ImGui.IsItemFocused () then context.FocusProperty ()
+                lighting3dEdited <- ImGui.SliderInt ("Light Shadow Samples", &lightShadowSamples, 0, 5) || lighting3dEdited; if ImGui.IsItemFocused () then context.FocusProperty ()
+                lighting3dEdited <- ImGui.SliderFloat ("Light Shadow Bias", &lightShadowBias, 0.0f, 0.05f) || lighting3dEdited; if ImGui.IsItemFocused () then context.FocusProperty ()
+                lighting3dEdited <- ImGui.SliderFloat ("Light Shadow Sample Scalar", &lightShadowSampleScalar, 0.0f, 0.05f) || lighting3dEdited; if ImGui.IsItemFocused () then context.FocusProperty ()
+                lighting3dEdited <- ImGui.SliderFloat ("Light Shadow Exponent", &lightShadowExponent, 0.0f, 90.0f) || lighting3dEdited; if ImGui.IsItemFocused () then context.FocusProperty ()
+                lighting3dEdited <- ImGui.SliderFloat ("Light Shadow Radius", &lightShadowRadius, 0.0f, 5.0f) || lighting3dEdited; if ImGui.IsItemFocused () then context.FocusProperty ()
+                lighting3dEdited <- ImGui.SliderFloat ("Light Shadow Density", &lightShadowDensity, 0.0f, 32.0f) || lighting3dEdited; if ImGui.IsItemFocused () then context.FocusProperty ()
+                lighting3dEdited <- ImGui.SliderFloat ("Light Map Singleton Blend Margin", &lightMapSingletonBlendMargin, 0.0f, 1.0f) || lighting3dEdited; if ImGui.IsItemFocused () then context.FocusProperty ()
+                ImGui.Text "Exposure / Tone Mapping"
+                lighting3dEdited <- ImGui.SliderFloat ("Light Exposure", &lightExposure, 0.0f, 10.0f) || lighting3dEdited; if ImGui.IsItemFocused () then context.FocusProperty ()
+                lighting3dEdited <- ImGui.Combo ("Tone Map Type", &toneMapType, ToneMapType.Names, ToneMapType.Names.Length) || lighting3dEdited; if ImGui.IsItemFocused () then context.FocusProperty ()
+                if toneMapType = AgXToneMap.Enumerate then
+                    lighting3dEdited <- ImGui.SliderFloat3 ("Tone Map Slope", &toneMapSlope, 0.0f, 2.0f) || lighting3dEdited; if ImGui.IsItemFocused () then context.FocusProperty ()
+                    lighting3dEdited <- ImGui.SliderFloat3 ("Tone Map Offset", &toneMapOffset, 0.0f, 2.0f) || lighting3dEdited; if ImGui.IsItemFocused () then context.FocusProperty ()
+                    lighting3dEdited <- ImGui.SliderFloat3 ("Tone Map Power", &toneMapPower, 0.0f, 2.0f) || lighting3dEdited; if ImGui.IsItemFocused () then context.FocusProperty ()
+                    lighting3dEdited <- ImGui.SliderFloat ("Tone Map Saturation", &toneMapSaturation, 0.0f, 2.0f) || lighting3dEdited; if ImGui.IsItemFocused () then context.FocusProperty ()
+                if toneMapType = ReinhardExtendedToneMap.Enumerate then
+                    lighting3dEdited <- ImGui.SliderFloat ("Tone Map White Point", &toneMapWhitePoint, 0.0f, 10.0f) || lighting3dEdited; if ImGui.IsItemFocused () then context.FocusProperty ()
+                ImGui.Text "Distance Fog"
+                lighting3dEdited <- ImGui.Checkbox ("Fog Enabled", &fogEnabled) || lighting3dEdited; if ImGui.IsItemFocused () then context.FocusProperty ()
+                lighting3dEdited <- ImGui.Combo ("Fog Type", &fogType, FogType.Names, FogType.Names.Length) || lighting3dEdited; if ImGui.IsItemFocused () then context.FocusProperty ()
+                if fogType = LinearFog.Enumerate then
+                    lighting3dEdited <- ImGui.InputFloat ("Fog Start", &fogStart, 1.0f, 10.0f) || lighting3dEdited; if ImGui.IsItemFocused () then context.FocusProperty ()
+                    lighting3dEdited <- ImGui.InputFloat ("Fog Finish", &fogFinish, 1.0f, 10.0f) || lighting3dEdited; if ImGui.IsItemFocused () then context.FocusProperty ()
+                else
+                    lighting3dEdited <- ImGui.SliderFloat ("Fog Density", &fogDensity, 0.0f, 0.1f) || lighting3dEdited; if ImGui.IsItemFocused () then context.FocusProperty ()
+                lighting3dEdited <- ImGui.ColorEdit4 ("Fog Color", &fogColor) || lighting3dEdited; if ImGui.IsItemFocused () then context.FocusProperty ()
+                ImGui.Text "Sub-Surface Scattering"
+                lighting3dEdited <- ImGui.Checkbox ("Sss Enabled", &sssEnabled) || lighting3dEdited; if ImGui.IsItemFocused () then context.FocusProperty ()
+                ImGui.Text "Screen-Space Ambient Occlusion"
+                lighting3dEdited <- ImGui.Checkbox ("Ssao Enabled", &ssaoEnabled) || lighting3dEdited; if ImGui.IsItemFocused () then context.FocusProperty ()
+                lighting3dEdited <- ImGui.SliderFloat ("Ssao Intensity", &ssaoIntensity, 0.0f, 10.0f) || lighting3dEdited; if ImGui.IsItemFocused () then context.FocusProperty ()
+                lighting3dEdited <- ImGui.SliderFloat ("Ssao Bias", &ssaoBias, 0.0f, 0.1f) || lighting3dEdited; if ImGui.IsItemFocused () then context.FocusProperty ()
+                lighting3dEdited <- ImGui.SliderFloat ("Ssao Radius", &ssaoRadius, 0.0f, 1.0f) || lighting3dEdited; if ImGui.IsItemFocused () then context.FocusProperty ()
+                lighting3dEdited <- ImGui.SliderFloat ("Ssao Distance Max", &ssaoDistanceMax, 0.0f, 1.0f) || lighting3dEdited; if ImGui.IsItemFocused () then context.FocusProperty ()
+                ImGui.Text "Screen-Space Volumetric Fog"
+                lighting3dEdited <- ImGui.Checkbox ("Ssvf Enabled", &ssvfEnabled) || lighting3dEdited; if ImGui.IsItemFocused () then context.FocusProperty ()
+                lighting3dEdited <- ImGui.SliderFloat ("Ssvf Intensity", &ssvfIntensity, 0.0f, 5.0f) || lighting3dEdited; if ImGui.IsItemFocused () then context.FocusProperty ()
+                lighting3dEdited <- ImGui.SliderInt ("Ssvf Steps", &ssvfSteps, 0, 128) || lighting3dEdited; if ImGui.IsItemFocused () then context.FocusProperty ()
+                lighting3dEdited <- ImGui.SliderFloat ("Ssvf Asymmetry", &ssvfAsymmetry, -1.0f, 1.0f) || lighting3dEdited; if ImGui.IsItemFocused () then context.FocusProperty ()
+                ImGui.Text "Screen-Space Reflection"
+                lighting3dEdited <- ImGui.Checkbox ("Ssrl Enabled", &ssrlEnabled) || lighting3dEdited; if ImGui.IsItemFocused () then context.FocusProperty ()
+                lighting3dEdited <- ImGui.SliderFloat ("Ssrl Intensity", &ssrlIntensity, 0.0f, 10.0f) || lighting3dEdited; if ImGui.IsItemFocused () then context.FocusProperty ()
+                lighting3dEdited <- ImGui.SliderFloat ("Ssrl Detail", &ssrlDetail, 0.0f, 1.0f) || lighting3dEdited; if ImGui.IsItemFocused () then context.FocusProperty ()
+                lighting3dEdited <- ImGui.SliderInt ("Ssrl Refinements Max", &ssrlRefinementsMax, 0, 32) || lighting3dEdited; if ImGui.IsItemFocused () then context.FocusProperty ()
+                lighting3dEdited <- ImGui.SliderFloat ("Ssrl Ray Thickness", &ssrlRayThickness, 0.0f, 1.0f) || lighting3dEdited; if ImGui.IsItemFocused () then context.FocusProperty ()
+                lighting3dEdited <- ImGui.SliderFloat ("Ssrl Toward Eye Cutoff", &ssrlTowardEyeCutoff, 0.0f, 1.0f) || lighting3dEdited; if ImGui.IsItemFocused () then context.FocusProperty ()
+                lighting3dEdited <- ImGui.SliderFloat ("Ssrl Depth Cutoff", &ssrlDepthCutoff, 0.0f, 128.0f) || lighting3dEdited; if ImGui.IsItemFocused () then context.FocusProperty ()
+                lighting3dEdited <- ImGui.SliderFloat ("Ssrl Depth Cutoff Margin", &ssrlDepthCutoffMargin, 0.0f, 1.0f) || lighting3dEdited; if ImGui.IsItemFocused () then context.FocusProperty ()
+                lighting3dEdited <- ImGui.SliderFloat ("Ssrl Distance Cutoff", &ssrlDistanceCutoff, 0.0f, 128.0f) || lighting3dEdited; if ImGui.IsItemFocused () then context.FocusProperty ()
+                lighting3dEdited <- ImGui.SliderFloat ("Ssrl Distance Cutoff Margin", &ssrlDistanceCutoffMargin, 0.0f, 1.0f) || lighting3dEdited; if ImGui.IsItemFocused () then context.FocusProperty ()
+                lighting3dEdited <- ImGui.SliderFloat ("Ssrl Roughness Cutoff", &ssrlRoughnessCutoff, 0.0f, 1.0f) || lighting3dEdited; if ImGui.IsItemFocused () then context.FocusProperty ()
+                lighting3dEdited <- ImGui.SliderFloat ("Ssrl Roughness Cutoff Margin", &ssrlRoughnessCutoffMargin, 0.0f, 1.0f) || lighting3dEdited; if ImGui.IsItemFocused () then context.FocusProperty ()
+                lighting3dEdited <- ImGui.SliderFloat ("Ssrl Slope Cutoff", &ssrlSlopeCutoff, 0.0f, 1.0f) || lighting3dEdited; if ImGui.IsItemFocused () then context.FocusProperty ()
+                lighting3dEdited <- ImGui.SliderFloat ("Ssrl Slope Cutoff Margin", &ssrlSlopeCutoffMargin, 0.0f, 1.0f) || lighting3dEdited; if ImGui.IsItemFocused () then context.FocusProperty ()
+                lighting3dEdited <- ImGui.SliderFloat ("Ssrl Edge Horizontal Margin", &ssrlEdgeHorizontalMargin, 0.0f, 1.0f) || lighting3dEdited; if ImGui.IsItemFocused () then context.FocusProperty ()
+                lighting3dEdited <- ImGui.SliderFloat ("Ssrl Edge Vertical Margin", &ssrlEdgeVerticalMargin, 0.0f, 1.0f) || lighting3dEdited; if ImGui.IsItemFocused () then context.FocusProperty ()
+                ImGui.Text "Screen-Space Refraction"
+                lighting3dEdited <- ImGui.Checkbox ("Ssrr Enabled", &ssrrEnabled) || lighting3dEdited; if ImGui.IsItemFocused () then context.FocusProperty ()
+                lighting3dEdited <- ImGui.SliderFloat ("Ssrr Intensity", &ssrrIntensity, 0.0f, 10.0f) || lighting3dEdited; if ImGui.IsItemFocused () then context.FocusProperty ()
+                lighting3dEdited <- ImGui.SliderFloat ("Ssrr Detail", &ssrrDetail, 0.0f, 1.0f) || lighting3dEdited; if ImGui.IsItemFocused () then context.FocusProperty ()
+                lighting3dEdited <- ImGui.SliderInt ("Ssrr Refinements Max", &ssrrRefinementsMax, 0, 32) || lighting3dEdited; if ImGui.IsItemFocused () then context.FocusProperty ()
+                lighting3dEdited <- ImGui.SliderFloat ("Ssrr Ray Thickness", &ssrrRayThickness, 0.0f, 1.0f) || lighting3dEdited; if ImGui.IsItemFocused () then context.FocusProperty ()
+                lighting3dEdited <- ImGui.SliderFloat ("Ssrr Distance Cutoff", &ssrrDistanceCutoff, 0.0f, 128.0f) || lighting3dEdited; if ImGui.IsItemFocused () then context.FocusProperty ()
+                lighting3dEdited <- ImGui.SliderFloat ("Ssrr Distance Cutoff Margin", &ssrrDistanceCutoffMargin, 0.0f, 1.0f) || lighting3dEdited; if ImGui.IsItemFocused () then context.FocusProperty ()
+                lighting3dEdited <- ImGui.SliderFloat ("Ssrr Edge Horizontal Margin", &ssrrEdgeHorizontalMargin, 0.0f, 1.0f) || lighting3dEdited; if ImGui.IsItemFocused () then context.FocusProperty ()
+                lighting3dEdited <- ImGui.SliderFloat ("Ssrr Edge Vertical Margin", &ssrrEdgeVerticalMargin, 0.0f, 1.0f) || lighting3dEdited; if ImGui.IsItemFocused () then context.FocusProperty ()
+                ImGui.Text "Bloom"
+                lighting3dEdited <- ImGui.Checkbox ("Bloom Enabled", &bloomEnabled) || lighting3dEdited; if ImGui.IsItemFocused () then context.FocusProperty ()
+                lighting3dEdited <- ImGui.SliderFloat ("Bloom Strength", &bloomStrength, 0.0f, 0.5f) || lighting3dEdited; if ImGui.IsItemFocused () then context.FocusProperty ()
+                lighting3dEdited <- ImGui.SliderFloat ("Bloom Threshold", &bloomThreshold, 0.0f, 5.0f) || lighting3dEdited; if ImGui.IsItemFocused () then context.FocusProperty ()
+                lighting3dEdited <- ImGui.Checkbox ("Bloom Karis Average Enabled", &bloomKarisAverageEnabled) || lighting3dEdited; if ImGui.IsItemFocused () then context.FocusProperty ()
+                lighting3dEdited <- ImGui.SliderFloat ("Bloom Filter Radius", &bloomFilterRadius, 0.0f, 0.01f) || lighting3dEdited; if ImGui.IsItemFocused () then context.FocusProperty ()
+                ImGui.Text "Depth of Field"
+                lighting3dEdited <- ImGui.Checkbox ("Depth of Field Enabled", &depthOfFieldEnabled) || lighting3dEdited; if ImGui.IsItemFocused () then context.FocusProperty ()
+                lighting3dEdited <- ImGui.SliderFloat ("Depth of Field Near Distance", &depthOfFieldNearDistance, 0.0f, 128.0f) || lighting3dEdited; if ImGui.IsItemFocused () then context.FocusProperty ()
+                lighting3dEdited <- ImGui.SliderFloat ("Depth of Field Far Distance", &depthOfFieldFarDistance, 0.0f, 128.0f) || lighting3dEdited; if ImGui.IsItemFocused () then context.FocusProperty ()
+                lighting3dEdited <- ImGui.SliderFloat ("Depth of Field Radius", &depthOfFieldRadius, 0.0f, 20.0f) || lighting3dEdited; if ImGui.IsItemFocused () then context.FocusProperty ()
+                lighting3dEdited <- ImGui.Combo ("Depth of Field Focal Type", &depthOfFieldFocalType, FocalType.Names, FocalType.Names.Length) || lighting3dEdited; if ImGui.IsItemFocused () then context.FocusProperty ()
+                if depthOfFieldFocalType = StaticFocalDistance.Enumerate then
+                    lighting3dEdited <- ImGui.SliderFloat ("Depth of Field Focal Distance", &depthOfFieldFocalDistance, 0.0f, 64.0f) || lighting3dEdited; if ImGui.IsItemFocused () then context.FocusProperty ()
+                elif depthOfFieldFocalType = DynamicFocalDistance.Enumerate then
+                    lighting3dEdited <- ImGui.SliderFloat2 ("Depth of Field Focal Point", &depthOfFieldFocalPoint, -0.5f, 0.5f) || lighting3dEdited; if ImGui.IsItemFocused () then context.FocusProperty ()
+                ImGui.Text "Chromatic Aberration"
+                lighting3dEdited <- ImGui.Checkbox ("Chromatic Aberration Enabled", &chromaticAberrationEnabled) || lighting3dEdited; if ImGui.IsItemFocused () then context.FocusProperty ()
+                lighting3dEdited <- ImGui.SliderFloat3 ("Chromatic Aberration Channel Offsets", &chromaticAberrationChannelOffsets, -0.02f, 0.02f) || lighting3dEdited; if ImGui.IsItemFocused () then context.FocusProperty ()
+                lighting3dEdited <- ImGui.SliderFloat2 ("Chromatic Aberration Focal Point", &chromaticAberrationFocalPoint, -0.5f, 0.5f) || lighting3dEdited; if ImGui.IsItemFocused () then context.FocusProperty ()
+                if lighting3dEdited then
+                    let lighting3dConfig =
+                        { LightCutoffMargin = lightCutoffMargin
+                          LightAmbientBoostCutoff = lightAmbientBoostCutoff
+                          LightAmbientBoostScalar = lightAmbientBoostScalar
+                          LightShadowSamples = lightShadowSamples
+                          LightShadowBias = lightShadowBias
+                          LightShadowSampleScalar = lightShadowSampleScalar
+                          LightShadowExponent = lightShadowExponent
+                          LightShadowRadius = lightShadowRadius
+                          LightShadowDensity = lightShadowDensity
+                          LightMapSingletonBlendMargin = lightMapSingletonBlendMargin
+                          LightExposure = lightExposure
+                          ToneMapType = ToneMapType.makeFromEnumeration toneMapType
+                          ToneMapSlope = toneMapSlope
+                          ToneMapOffset = toneMapOffset
+                          ToneMapPower = toneMapPower
+                          ToneMapSaturation = toneMapSaturation
+                          ToneMapWhitePoint = toneMapWhitePoint
+                          FogEnabled = fogEnabled
+                          FogType = FogType.makeFromEnumeration fogType
+                          FogStart = fogStart
+                          FogFinish = fogFinish
+                          FogDensity = fogDensity
+                          FogColor = Color fogColor
+                          SssEnabled = sssEnabled
+                          SsaoEnabled = ssaoEnabled
+                          SsaoIntensity = ssaoIntensity
+                          SsaoBias = ssaoBias
+                          SsaoRadius = ssaoRadius
+                          SsaoDistanceMax = ssaoDistanceMax
+                          SsvfEnabled = ssvfEnabled
+                          SsvfSteps = ssvfSteps
+                          SsvfIntensity = ssvfIntensity
+                          SsvfAsymmetry = ssvfAsymmetry
+                          SsrlEnabled = ssrlEnabled
+                          SsrlIntensity = ssrlIntensity
+                          SsrlDetail = ssrlDetail
+                          SsrlRefinementsMax = ssrlRefinementsMax
+                          SsrlRayThickness = ssrlRayThickness
+                          SsrlTowardEyeCutoff = ssrlTowardEyeCutoff
+                          SsrlDepthCutoff = ssrlDepthCutoff
+                          SsrlDepthCutoffMargin = ssrlDepthCutoffMargin
+                          SsrlDistanceCutoff = ssrlDistanceCutoff
+                          SsrlDistanceCutoffMargin = ssrlDistanceCutoffMargin
+                          SsrlRoughnessCutoff = ssrlRoughnessCutoff
+                          SsrlRoughnessCutoffMargin = ssrlRoughnessCutoffMargin
+                          SsrlSlopeCutoff = ssrlSlopeCutoff
+                          SsrlSlopeCutoffMargin = ssrlSlopeCutoffMargin
+                          SsrlEdgeHorizontalMargin = ssrlEdgeHorizontalMargin
+                          SsrlEdgeVerticalMargin = ssrlEdgeVerticalMargin
+                          SsrrEnabled = ssrrEnabled
+                          SsrrIntensity = ssrrIntensity
+                          SsrrDetail = ssrrDetail
+                          SsrrRefinementsMax = ssrrRefinementsMax
+                          SsrrRayThickness = ssrrRayThickness
+                          SsrrDistanceCutoff = ssrrDistanceCutoff
+                          SsrrDistanceCutoffMargin = ssrrDistanceCutoffMargin
+                          SsrrEdgeHorizontalMargin = ssrrEdgeHorizontalMargin
+                          SsrrEdgeVerticalMargin = ssrrEdgeVerticalMargin
+                          BloomEnabled = bloomEnabled
+                          BloomStrength = bloomStrength
+                          BloomThreshold = bloomThreshold
+                          BloomKarisAverageEnabled = bloomKarisAverageEnabled
+                          BloomFilterRadius = bloomFilterRadius
+                          DepthOfFieldEnabled = depthOfFieldEnabled
+                          DepthOfFieldNearDistance = depthOfFieldNearDistance
+                          DepthOfFieldFarDistance = depthOfFieldFarDistance
+                          DepthOfFieldRadius = depthOfFieldRadius
+                          DepthOfFieldFocalType = FocalType.makeFromEnumeration depthOfFieldFocalType
+                          DepthOfFieldFocalDistance = depthOfFieldFocalDistance
+                          DepthOfFieldFocalPoint = depthOfFieldFocalPoint
+                          ChromaticAberrationEnabled = chromaticAberrationEnabled
+                          ChromaticAberrationChannelOffsets = chromaticAberrationChannelOffsets
+                          ChromaticAberrationFocalPoint = chromaticAberrationFocalPoint }
+                    (false, true, lighting3dConfig)
+                else (false, false, lighting3dConfig)
+            | :? Nav3dConfig as nav3dConfig ->
+                let mutable nav3dConfigEdited = false
+                let mutable cellSize = nav3dConfig.CellSize
+                let mutable cellHeight = nav3dConfig.CellHeight
+                let mutable agentHeight = nav3dConfig.AgentHeight
+                let mutable agentRadius = nav3dConfig.AgentRadius
+                let mutable agentClimbMax = nav3dConfig.AgentClimbMax
+                let mutable agentSlopeMax = nav3dConfig.AgentSlopeMax
+                let mutable regionSizeMin = nav3dConfig.RegionSizeMin
+                let mutable regionSizeMerge = nav3dConfig.RegionSizeMerge
+                let mutable edgeLengthMax = nav3dConfig.EdgeLengthMax
+                let mutable edgeErrorMax = nav3dConfig.EdgeErrorMax
+                let mutable vertsPerPolygon = nav3dConfig.VertsPerPolygon
+                let mutable detailSampleDistance = nav3dConfig.DetailSampleDistance
+                let mutable detailSampleErrorMax = nav3dConfig.DetailSampleErrorMax
+                let mutable filterLowHangingObstacles = nav3dConfig.FilterLowHangingObstacles
+                let mutable filterLedgeSpans = nav3dConfig.FilterLedgeSpans
+                let mutable filterWalkableLowHeightSpans = nav3dConfig.FilterWalkableLowHeightSpans
+                let mutable partitionTypeStr = scstring nav3dConfig.PartitionType
+                if ImGui.SliderFloat ("CellSize", &cellSize, 0.01f, 1.0f, "%.2f") then nav3dConfigEdited <- true; if ImGui.IsItemFocused () then context.FocusProperty ()
+                if ImGui.SliderFloat ("CellHeight", &cellHeight, 0.01f, 1.0f, "%.2f") then nav3dConfigEdited <- true; if ImGui.IsItemFocused () then context.FocusProperty ()
+                if ImGui.SliderFloat ("AgentHeight", &agentHeight, 0.1f, 5.0f, "%.2f") then nav3dConfigEdited <- true; if ImGui.IsItemFocused () then context.FocusProperty ()
+                if ImGui.SliderFloat ("AgentRadius", &agentRadius, 0.0f, 5.0f, "%.2f") then nav3dConfigEdited <- true; if ImGui.IsItemFocused () then context.FocusProperty ()
+                if ImGui.SliderFloat ("AgentClimbMax", &agentClimbMax, 0.1f, 5.0f, "%.2f") then nav3dConfigEdited <- true; if ImGui.IsItemFocused () then context.FocusProperty ()
+                if ImGui.SliderFloat ("AgentSlopeMax", &agentSlopeMax, 1.0f, 90.0f, "%.0f") then nav3dConfigEdited <- true; if ImGui.IsItemFocused () then context.FocusProperty ()
+                if ImGui.SliderInt ("RegionSizeMin", &regionSizeMin, 1, 150) then nav3dConfigEdited <- true; if ImGui.IsItemFocused () then context.FocusProperty ()
+                if ImGui.SliderInt ("RegionSizeMerge", &regionSizeMerge, 1, 150) then nav3dConfigEdited <- true; if ImGui.IsItemFocused () then context.FocusProperty ()
+                if ImGui.SliderFloat ("EdgeLengthMax", &edgeLengthMax, 0.0f, 50.0f, "%.1f") then nav3dConfigEdited <- true; if ImGui.IsItemFocused () then context.FocusProperty ()
+                if ImGui.SliderFloat ("EdgeErrorMax", &edgeErrorMax, 0.1f, 3f, "%.1f") then nav3dConfigEdited <- true; if ImGui.IsItemFocused () then context.FocusProperty ()
+                if ImGui.SliderInt ("VertPerPoly", &vertsPerPolygon, 3, 12) then nav3dConfigEdited <- true; if ImGui.IsItemFocused () then context.FocusProperty ()
+                if ImGui.SliderFloat ("DetailSampleDistance", &detailSampleDistance, 0.0f, 16.0f, "%.1f") then nav3dConfigEdited <- true; if ImGui.IsItemFocused () then context.FocusProperty ()
+                if ImGui.SliderFloat ("DetailSampleErrorMax", &detailSampleErrorMax, 0.0f, 16.0f, "%.1f") then nav3dConfigEdited <- true; if ImGui.IsItemFocused () then context.FocusProperty ()
+                if ImGui.Checkbox ("FilterLowHangingObstacles", &filterLowHangingObstacles) then nav3dConfigEdited <- true; if ImGui.IsItemFocused () then context.FocusProperty ()
+                if ImGui.Checkbox ("FilterLedgeSpans", &filterLedgeSpans) then nav3dConfigEdited <- true; if ImGui.IsItemFocused () then context.FocusProperty ()
+                if ImGui.Checkbox ("FilterWalkableLowHeightSpans", &filterWalkableLowHeightSpans) then nav3dConfigEdited <- true; if ImGui.IsItemFocused () then context.FocusProperty ()
+                if ImGui.BeginCombo ("ParitionType", partitionTypeStr, ImGuiComboFlags.HeightLarge) then
+                    let partitionTypeStrs = Array.map (fun (ptv : RcPartitionType) -> ptv.Name) RcPartitionType.Values
+                    for partitionTypeStr' in partitionTypeStrs do
+                        if ImGui.Selectable (partitionTypeStr', (partitionTypeStr' = partitionTypeStr)) then
+                            if partitionTypeStr <> partitionTypeStr' then
+                                partitionTypeStr <- partitionTypeStr'
+                                nav3dConfigEdited <- true
+                    ImGui.EndCombo ()
+                if ImGui.IsItemFocused () then context.FocusProperty ()
+                if nav3dConfigEdited then
+                    let nav3dConfig =
+                        { CellSize = cellSize
+                          CellHeight = cellHeight
+                          AgentHeight = agentHeight
+                          AgentRadius = agentRadius
+                          AgentClimbMax = agentClimbMax
+                          AgentSlopeMax = agentSlopeMax
+                          RegionSizeMin = regionSizeMin
+                          RegionSizeMerge = regionSizeMerge
+                          EdgeLengthMax = edgeLengthMax
+                          EdgeErrorMax = edgeErrorMax
+                          VertsPerPolygon = vertsPerPolygon
+                          DetailSampleDistance = detailSampleDistance
+                          DetailSampleErrorMax = detailSampleErrorMax
+                          FilterLowHangingObstacles = filterLowHangingObstacles
+                          FilterLedgeSpans = filterLedgeSpans
+                          FilterWalkableLowHeightSpans = filterWalkableLowHeightSpans
+                          PartitionType = scvalue partitionTypeStr }
+                    (false, true, nav3dConfig)
+                else (false, false, nav3dConfig)
+            | :? (FontStyle Set) as fontStyling ->
+                let promoted = false // NOTE: assuming no promotion since this is an engine type.
+                let mutable bold = fontStyling.Contains Bold
+                let mutable italic = fontStyling.Contains Italic
+                let mutable underline = fontStyling.Contains Underline
+                let mutable strikethrough = fontStyling.Contains Strikethrough
+                ImGui.Text name
+                ImGui.Indent ()
+                ImGui.PushID name
+                let editedBold = ImGui.Checkbox (nameof Bold, &bold)
+                let editedItalic = ImGui.Checkbox (nameof Italic, &italic)
+                let editedUnderline = ImGui.Checkbox (nameof Underline, &underline)
+                let editedStrikethrough = ImGui.Checkbox (nameof Strikethrough, &strikethrough)
+                let edited = editedBold || editedItalic || editedUnderline || editedStrikethrough
+                ImGui.PopID ()
+                ImGui.Unindent ()
+                let fontStyling =
+                    Set.empty
+                    |> (fun s -> if bold then Set.add Bold s else s)
+                    |> (fun s -> if italic then Set.add Italic s else s)
+                    |> (fun s -> if underline then Set.add Underline s else s)
+                    |> (fun s -> if strikethrough then Set.add Strikethrough s else s)
+                (promoted, edited, fontStyling)
+            | :? (Animation array) as animations ->
+                ImGui.Text name
+                ImGui.SameLine ()
+                ImGui.PushID name
+                let (promoted, edited, animations) =
+                    World.imGuiEditPropertyArray
+                        (fun name animation ->
+                            let (promoted, edited, animation) = World.imGuiEditProperty name (typeof<Animation>) animation context world
+                            (promoted, edited, animation :?> Animation))
+                        { StartTime = GameTime.zero; LifeTimeOpt = None; Name = ""; Playback = Loop; Rate = 1.0f; Weight = 1.0f; BoneFilterOpt = None }
+                        name animations context
+                ImGui.PopID ()
+                (promoted, edited, animations)
+            | :? StairSteppingCharacterProperties when
+                (match context.SelectedEntityOpt with
+                 | Some entity -> match entity.TryGet<Nu.BodyType> "BodyType" world with ValueSome bodyType -> not bodyType.IsCharacter | ValueNone -> false
+                 | None -> false) ->
+                (false, false, value) // hides character properties unless is character body type
+            | _ -> World.imGuiEditPropertyGeneralized name ty value context world
+
+/// Override of Jolt DebugRenderer to render to ImGui.
+type JoltDebugRendererImGui () =
+    inherit DebugRenderer ()
+
+    let segments = Dictionary<Color, Segment3 List> ()
+
+    override this.DrawLine (start, stop, color) =
+        let color = Color (color.ToVector4 ())
+        let segment = Segment3 (start, stop)
+        let magMaxSquared =
+            Constants.Render.Body3dSegmentRenderMagnitudeMax *
+            Constants.Render.Body3dSegmentRenderMagnitudeMax
+        if segment.MagnitudeSquared < magMaxSquared then
+            match segments.TryGetValue color with
+            | (true, segmentList) -> segmentList.Add segment
+            | (false, _) ->
+                let segmentList = List ()
+                segmentList.Add segment
+                segments.Add (color, segmentList)
+
+    override this.DrawText3D (_, _, _, _) =
+        () // TODO: implement.
+
+    /// Actually render all the stored drawing commands.
+    member this.Flush (world : World) =
+        let distanceMaxSquared =
+            Constants.Render.Body3dSegmentRenderDistanceMax *
+            Constants.Render.Body3dSegmentRenderDistanceMax
+        for struct (color, segmentList) in segments.Pairs' do
+            let segmentsNear = segmentList |> Seq.filter (fun segment -> ((segment.A + segment.Vector * 0.5f) - world.Eye3dCenter).MagnitudeSquared < distanceMaxSquared)
+            World.imGuiSegments3d segmentsNear 1.0f color world
+            segmentList.Clear ()
+        this.NextFrame ()
+
+/// More ImGui functions for the world.
+[<AutoOpen>]
+module WorldImGui2 =
+    type World with
+
+        /// Render the 2D physics via ImGui.
+        static member imGuiRenderPhysics2d world =
+            let segments = Dictionary<Color, struct (Vector2 * Vector2) List> ()
+            let circles = Dictionary<struct (Color * single), Vector2 List> ()
+            let physicsEngine2d = World.getPhysicsEngine2d world
+            let renderContext = World.makePhysicsEngine2dRenderContext segments circles world
+            physicsEngine2d.TryRender renderContext
+            for struct (color, segmentList) in segments.Pairs' do
+                World.imGuiSegments2d false segmentList 1.0f color world
+                segmentList.Clear ()
+            for struct (struct (color, radius), circleList) in circles.Pairs' do
+                World.imGuiCircles2d false circleList radius false color world
+                circleList.Clear ()
+
+        /// Render the 3D physics via ImGui using the given settings.
+        static member imGuiRenderPhysics3d (settings : DrawSettings) world =
+            match World.getRendererPhysics3dOpt world with
+            | Some debugRenderer ->
+                let physicsEngine3d = World.getPhysicsEngine3d world
+                let joltRenderer = debugRenderer :?> JoltDebugRendererImGui
+                let renderContext =
+                    { DebugRenderer = joltRenderer
+                      DrawSettings = settings
+                      EyeCenter = world.Eye3dCenter
+                      EyeFrustum = world.Eye3dFrustumView }
+                physicsEngine3d.TryRender renderContext
+                joltRenderer.Flush world
+            | None -> ()

@@ -1,0 +1,8 @@
+# Emitter output is pinned byte-identical by tests; format the emitter, not its artifacts.
+components/demo/generated/
+components/demo/demo/generated/
+components/nu-engine/
+
+# SageFs evaluates .SageFs/config.fsx as a single-line F# expression; a
+# multi-line record update is an offside error. Formatting it would break it.
+.SageFs/config.fsx

@@ -1,0 +1,57 @@
+shape nil.
+shape cons with head tail.
+shape tvar with id.
+shape prim with name.
+shape rec with fields.
+shape field with name type.
+shape fn with params result effects.
+shape rowempty.
+shape rowextend with label rest.
+shape rowvar with id.
+shape setclosed with labels.
+shape setopen with labels id.
+shape setvar with id.
+shape pair with left right.
+shape ok with value next.
+shape error with reason.
+cycle member x xs = match xs, when nil() then 0, when cons(h t) then match equals(h x), when 1 then 1, otherwise member(x t) close, otherwise 0 close.
+cycle subset xs ys = match xs, when nil() then 1, when cons(h t) then match member(h ys), when 1 then subset(t ys), otherwise 0 close, otherwise 0 close.
+logic same xs ys = multiply(subset(xs ys) subset(ys xs)).
+cycle difference xs ys = match xs, when nil() then nil(), when cons(h t) then match member(h ys), when 1 then difference(t ys), otherwise cons(h difference(t ys)) close, otherwise nil() close.
+cycle labels fs = match fs, when nil() then nil(), when cons(f rest) then match f, when field(n t) then cons(n labels(rest)), otherwise labels(rest) close, otherwise nil() close.
+logic samekey a b = match a, when tvar(i) then match b, when tvar(j) then equals(i j), otherwise 0 close, when rowvar(i) then match b, when rowvar(j) then equals(i j), otherwise 0 close, when setvar(i) then match b, when setvar(j) then equals(i j), otherwise 0 close, otherwise 0 close.
+cycle lookup key s = match s, when nil() then error("missing"), when cons(p rest) then match p, when pair(k v) then match samekey(k key), when 1 then ok(v rest), otherwise lookup(key rest) close, otherwise lookup(key rest) close, otherwise error("missing") close.
+cycle walk t s = match t, when tvar(i) then match lookup(tvar(i) s), when ok(v rest) then walk(v s), otherwise t close, when rowvar(i) then match lookup(rowvar(i) s), when ok(v rest) then walk(v s), otherwise t close, when setvar(i) then match lookup(setvar(i) s), when ok(v rest) then walk(v s), otherwise t close, otherwise t close.
+cycle occurs key t = match t, when tvar(i) then match key, when tvar(j) then equals(i j), otherwise 0 close, when fn(ps r e) then match occurslist(key ps), when 1 then 1, otherwise occurs(key r) close, when rec(fs) then occursfields(key fs), otherwise 0 close.
+cycle occurslist key xs = match xs, when nil() then 0, when cons(h t) then match occurs(key h), when 1 then 1, otherwise occurslist(key t) close, otherwise 0 close.
+cycle occursfields key fs = match fs, when nil() then 0, when cons(f t) then match f, when field(n v) then match occurs(key v), when 1 then 1, otherwise occursfields(key t) close, otherwise occursfields(key t) close, otherwise 0 close.
+cycle occursrow v r = match r, when rowempty() then 0, when rowextend(l rest) then occursrow(v rest), when rowvar(i) then match v, when rowvar(j) then equals(i j), otherwise 0 close, otherwise 0 close.
+logic occursset v s = match s, when setclosed(ls) then 0, when setopen(ls i) then match v, when setvar(j) then equals(i j), otherwise 0 close, otherwise 0 close.
+cycle findfield name fs = match fs, when nil() then error("missing"), when cons(f rest) then match f, when field(n t) then match equals(n name), when 1 then ok(t rest), otherwise findfield(name rest) close, otherwise findfield(name rest) close, otherwise error("missing") close.
+cycle rowremove label r = match r, when rowempty() then error("missing"), when rowextend(l rest) then match equals(l label), when 1 then ok(rest 0), otherwise match rowremove(label rest), when ok(rest2 rest3) then ok(rowextend(l rest2) rest3), otherwise error("missing") close close, when rowvar(i) then error("open") close.
+logic unifyprim a b s n = match a, when prim(x) then match b, when prim(y) then match equals(x y), when 1 then ok(s n), otherwise error("prim") close, otherwise error("kind") close, otherwise error("kind") close.
+cycle unify a b s n = let a2 = walk(a s) in let b2 = walk(b s) in match a2, when tvar(i) then unifyvar(a2 b2 s n), when prim(x) then unifyprim(a2 b2 s n), when fn(ps r e) then unifyfn(a2 b2 s n), when rec(fs) then unifyrecord(a2 b2 s n), when rowempty() then unifyrow(a2 b2 s n), when rowextend(l rest) then unifyrow(a2 b2 s n), when rowvar(i) then unifyrow(a2 b2 s n), when setclosed(ls) then unifyset(a2 b2 s n), when setopen(ls i) then unifyset(a2 b2 s n), otherwise error("kind") close.
+and unifyvar a b s n = match b, when tvar(j) then match a, when tvar(i) then match equals(i j), when 1 then ok(s n), otherwise ok(cons(pair(a b) s) n) close, otherwise ok(cons(pair(a b) s) n) close, otherwise match occurs(a b), when 1 then error("occurs"), otherwise ok(cons(pair(a b) s) n) close close.
+and unifylist xs ys s n = match xs, when nil() then match ys, when nil() then ok(s n), otherwise error("arity") close, when cons(h t) then match ys, when cons(h2 t2) then match unify(h h2 s n), when ok(s2 n2) then unifylist(t t2 s2 n2), otherwise error("param") close, otherwise error("arity") close, otherwise error("arity") close.
+and unifyfn a b s n = match a, when fn(ps r e) then match b, when fn(ps2 r2 e2) then match unifylist(ps ps2 s n), when ok(s2 n2) then match unify(r r2 s2 n2), when ok(s3 n3) then unifyset(e e2 s3 n3), otherwise error("result") close, otherwise error("params") close, otherwise error("kind") close, otherwise error("kind") close.
+and unifyrecord a b s n = match a, when rec(fs) then match b, when rec(fs2) then match same(labels(fs) labels(fs2)), when 1 then unifyfields(fs fs2 s n), otherwise error("record") close, otherwise error("kind") close, otherwise error("kind") close.
+and unifyfields fs fs2 s n = match fs, when nil() then ok(s n), when cons(f rest) then match f, when field(name ty) then match findfield(name fs2), when ok(fty rest2) then match unify(ty fty s n), when ok(s2 n2) then unifyfields(rest fs2 s2 n2), otherwise error("field") close, otherwise error("field") close, otherwise error("field") close, otherwise error("field") close.
+and unifyrow a b s n = match a, when rowempty() then match b, when rowempty() then ok(s n), otherwise error("row") close, when rowextend(l rest) then match b, when rowextend(l2 rest2) then match equals(l l2), when 1 then unifyrow(rest rest2 s n), otherwise unifyrowrewrite(l rest l2 rest2 s n) close, otherwise error("row") close, when rowvar(i) then match b, when rowvar(j) then match equals(i j), when 1 then ok(s n), otherwise ok(cons(pair(a b) s) n) close, otherwise match occursrow(a b), when 1 then error("occurs"), otherwise ok(cons(pair(a b) s) n) close close, otherwise error("kind") close.
+and unifyrowrewrite l rest l2 rest2 s n = match rowremove(l rest2), when ok(rest2a rest2n) then match rowremove(l2 rest), when ok(resta restn) then unifyrow(resta rest2a s n), otherwise error("row") close, otherwise error("row") close.
+and unifyset a b s n = match a, when setclosed(xs) then match b, when setclosed(ys) then match same(xs ys), when 1 then ok(s n), otherwise error("set") close, when setopen(ys j) then match subset(ys xs), when 1 then let rest = difference(xs ys) in ok(cons(pair(setvar(j) setclosed(rest)) s) n), otherwise error("set") close, otherwise error("kind") close, when setopen(xs i) then match b, when setclosed(ys) then match subset(xs ys), when 1 then let rest = difference(ys xs) in ok(cons(pair(setvar(i) setclosed(rest)) s) n), otherwise error("set") close, when setopen(ys j) then match equals(i j), when 1 then match same(xs ys), when 1 then ok(s n), otherwise error("set") close, otherwise match occursset(setvar(i) b), when 1 then error("occurs"), otherwise match occursset(setvar(j) a), when 1 then error("occurs"), otherwise let li = difference(ys xs) in let lj = difference(xs ys) in ok(cons(pair(setvar(i) setopen(li n)) cons(pair(setvar(j) setopen(lj n)) s)) add(n 1)) close close close, otherwise error("kind") close, otherwise error("kind") close.
+logic code r = match r, when ok(v n) then 1, otherwise 0 close.
+logic nextof r = match r, when ok(v n) then n, otherwise -1 close.
+logic caseprimok = code(unify(prim(1) prim(1) nil() 0)).
+logic caseprimno = code(unify(prim(1) prim(2) nil() 0)).
+logic casetvar = code(unify(tvar(0) prim(1) nil() 0)).
+logic caseoccurs = code(unify(tvar(0) fn(cons(tvar(0) nil()) tvar(0) setclosed(nil())) nil() 0)).
+logic casefn = code(unify(fn(cons(prim(1) nil()) prim(1) setclosed(nil())) fn(cons(prim(1) nil()) prim(1) setclosed(nil())) nil() 0)).
+logic caseeffect = code(unify(fn(cons(prim(1) nil()) prim(1) setopen(nil() 0)) fn(cons(prim(1) nil()) prim(1) setclosed(cons(1 nil()))) nil() 0)).
+logic caserecord = code(unify(rec(cons(field(1 prim(1)) nil())) rec(cons(field(1 prim(1)) nil())) nil() 0)).
+logic caserecordno = code(unify(rec(cons(field(1 prim(1)) nil())) rec(cons(field(1 prim(2)) nil())) nil() 0)).
+logic caserow = code(unify(rowextend(1 rowempty()) rowextend(1 rowempty()) nil() 0)).
+logic caserowopen = code(unify(rowextend(1 rowvar(0)) rowextend(1 rowempty()) nil() 0)).
+logic casesetopen = code(unify(setopen(nil() 0) setclosed(cons(1 nil())) nil() 0)).
+logic casesets = code(unify(setopen(cons(1 nil()) 0) setopen(cons(2 nil()) 1) nil() 2)).
+logic casesetsnext = nextof(unify(setopen(cons(1 nil()) 0) setopen(cons(2 nil()) 1) nil() 2)).
+logic casekind = code(unify(rowempty() setclosed(nil()) nil() 0)).

@@ -1,0 +1,117 @@
+﻿// Nu Game Engine.
+// Required Notice:
+// Copyright (C) Bryan Edds.
+// Nu Game Engine is licensed under the Nu Game Engine Noncommercial License.
+// See https://github.com/bryanedds/Nu/blob/master/License.md.
+
+namespace Nu
+open Prime
+
+/// Active patterns for recognizing asset file extensions.
+[<AutoOpen>]
+module AssetPatterns =
+
+    let (|RawExtension|_|) extension = match extension with ".raw" -> Some extension | _ -> None
+    let (|ImageExtension|_|) extension = match extension with ".bmp" | ".png" | ".jpg" | ".jpeg" | ".tga" | ".tif" | ".tiff" | ".dds" | ".ktx" -> Some extension | _ -> None
+    let (|FontExtension|_|) extension = match extension with ".ttf" -> Some extension | _ -> None
+    let (|TileMapExtension|_|) extension = match extension with ".tmx" -> Some extension | _ -> None
+    let (|CubeMapExtension|_|) extension = match extension with ".cbm" -> Some extension | _ -> None
+    let (|SoundExtension|_|) extension = match extension with ".wav" -> Some extension | _ -> None
+    let (|SongExtension|_|) extension = match extension with ".ogg" | ".mp3" -> Some extension | _ -> None
+    let (|ModelExtension|_|) extension = match extension with ".fbx" | ".gltf" | ".glb" | ".dae" | ".obj" -> Some extension | _ -> None
+    let (|CsvExtension|_|) extension = match extension with ".csv" -> Some extension | _ -> None
+    let (|CursorExtension|_|) extension = match extension with ".cur" -> Some extension | _ -> None
+
+namespace Nu.Assets
+open Prime
+
+/// The global assets that come with the Nu Game Engine.
+[<RequireQualifiedAccess>]
+module Global =
+
+    let [<Literal>] AssetGraphFilePath = "AssetGraph.nuag"
+    let [<Literal>] OverlayerFilePath = "Overlayer.nuol"
+
+/// The default assets that come with the Nu Game Engine.
+[<RequireQualifiedAccess>]
+module Default =
+
+    let [<Literal>] PackageName = "Default"
+    let [<Literal>] ImageName = "Image"
+    let [<Literal>] EmptyImageName = "EmptyImage"
+    let [<Literal>] BlackName = "Black"
+    let [<Literal>] WhiteName = "White"
+    let [<Literal>] StaticSpriteName = "StaticSprite"
+    let [<Literal>] AnimatedSpriteName = "AnimatedSprite"
+    let [<Literal>] CursorName = "Cursor"
+    let [<Literal>] BlockName = "Block"
+    let [<Literal>] BallName = "Ball"
+    let [<Literal>] BrickName = "Brick"
+    let [<Literal>] PaddleName = "Paddle"
+    let [<Literal>] FluidName = "Fluid"
+    let [<Literal>] GasName = "Gas"
+    let [<Literal>] HighlightSpriteName = "Highlight"
+    let [<Literal>] Character2dIdleName = "Character2dIdle"
+    let [<Literal>] Character2dJumpName = "Character2dJump"
+    let [<Literal>] Character2dWalkName = "Character2dWalk"
+    let [<Literal>] ButtonUpName = "ButtonUp"
+    let [<Literal>] ButtonDownName = "ButtonDown"
+    let [<Literal>] LabelName = "Label"
+    let [<Literal>] BorderName = "Border"
+    let [<Literal>] PanelName = "Panel"
+    let [<Literal>] NuSlideName = "NuSlide"
+    let [<Literal>] HeightMapName = "HeightMap"
+    let [<Literal>] FontName = "Font"
+    let [<Literal>] TileMapName = "TileMap"
+    let [<Literal>] EmptyTileMapName = "EmptyTileMap"
+    let [<Literal>] SkyBoxMapName = "SkyBoxMap"
+    let [<Literal>] AlbedoName = "Albedo"
+    let [<Literal>] RoughnessName = "Roughness"
+    let [<Literal>] MetallicName = "Metallic"
+    let [<Literal>] AmbientOcclusionName = "AmbientOcclusion"
+    let [<Literal>] EmissionName = "Emission"
+    let [<Literal>] NormalName = "Normal"
+    let [<Literal>] SubdermalName = "Subdermal"
+    let [<Literal>] FinenessName = "Fineness"
+    let [<Literal>] ScatterName = "Scatter"
+    let [<Literal>] ClearCoatName = "ClearCoat"
+    let [<Literal>] ClearCoatRoughnessName = "ClearCoatRoughness"
+    let [<Literal>] ClearCoatNormalName = "ClearCoatNormal"
+    let [<Literal>] UserDefinedImage0Name = "UserDefinedImage0"
+    let [<Literal>] UserDefinedImage1Name = "UserDefinedImage1"
+    let [<Literal>] UserDefinedImage2Name = "UserDefinedImage2"
+    let [<Literal>] TerrainLayer0AlbedoName = "TerrainLayer0Albedo"
+    let [<Literal>] TerrainLayer0RoughnessName = "TerrainLayer0Roughness"
+    let [<Literal>] TerrainLayer0AmbientOcclusionName = "TerrainLayer0AmbientOcclusion"
+    let [<Literal>] TerrainLayer0NormalName = "TerrainLayer0Normal"
+    let [<Literal>] TerrainLayer0UserDefinedImageName = "TerrainLayer0UserDefinedImage"
+    let [<Literal>] TerrainLayer0BlendName = "TerrainLayer0Blend"
+    let [<Literal>] TerrainLayer1AlbedoName = "TerrainLayer1Albedo"
+    let [<Literal>] TerrainLayer1RoughnessName = "TerrainLayer1Roughness"
+    let [<Literal>] TerrainLayer1AmbientOcclusionName = "TerrainLayer1AmbientOcclusion"
+    let [<Literal>] TerrainLayer1NormalName = "TerrainLayer1Normal"
+    let [<Literal>] TerrainLayer1UserDefinedImageName = "TerrainLayer1UserDefinedImage"
+    let [<Literal>] TerrainLayer1BlendName = "TerrainLayer1Blend"
+    let [<Literal>] TerrainTintName = "TerrainTint"
+    let [<Literal>] StaticModelName = "StaticModel"
+    let [<Literal>] BallModelName = "BallModel"
+    let [<Literal>] HighlightModelName = "HighlightModel"
+    let [<Literal>] LightbulbModelName = "LightbulbModel"
+    let [<Literal>] LightProbeModelName = "LightProbeModel"
+    let [<Literal>] AnimatedModelName = "AnimatedModel"
+    let [<Literal>] SoundName = "Sound"
+    let [<Literal>] SongName = "Song"
+    let [<Literal>] RawIconName = "RawIcon"
+    let [<Literal>] TileMapIconName = "TileMapIcon"
+    let [<Literal>] StaticModelIconName = "StaticModelIcon"
+    let [<Literal>] AnimatedModelIconName = "AnimatedModelIcon"
+    let [<Literal>] SoundIconName = "SoundIcon"
+    let [<Literal>] SongIconName = "SongIcon"
+    let [<Uniform>] IconNames =
+        Set.ofList
+            [RawIconName
+             TileMapIconName
+             StaticModelIconName
+             AnimatedModelIconName
+             SoundIconName
+             SongIconName]

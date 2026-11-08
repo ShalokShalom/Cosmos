@@ -1,0 +1,52 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  build-test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.x
+
+      - name: Restore local tools
+        run: dotnet tool restore
+
+      - uses: extractions/setup-just@v2
+
+      # The suite discharges SMT obligations in process, so the native Z3
+      # library has to be present. It is a documented dependency, not a
+      # runner default: see docs/kernel/nativeaot.typ.
+      - name: Install the Z3 native library
+        run: sudo apt-get update && sudo apt-get install -y libz3-dev
+
+      # These checks cover the facts the compiler and tests cannot see: the
+      # component boundary, ABI and schema versions, documented counts, decision
+      # ids, the docs index, and the C adapter's compile-time contract.
+      - name: Check the workspace, the docs, and the C boundary
+        run: |
+          just poly-check
+          just docs-check
+          just conformance-check
+
+      - name: Check formatting
+        run: dotnet fantomas check .
+
+      - name: Build the product and the test deployable
+        run: |
+          dotnet build bases/scale-cli/scale.fsproj
+          dotnet build projects/scale-tests/scale-tests.fsproj
+
+      - name: Freshness (the build must match the files)
+        run: dotnet fsi tools/freshness-check.fsx
+
+      - name: Test (every kind)
+        run: dotnet run --no-build --project projects/scale-tests/scale-tests.fsproj -- --all-tests
+
+      - name: Granular suite (JIT-only writer checks)
+        run: dotnet run --no-build --project projects/scale-tests/scale-tests.fsproj -- --granular-tests

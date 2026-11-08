@@ -1,0 +1,265 @@
+﻿// Nu Game Engine.
+// Required Notice:
+// Copyright (C) Bryan Edds.
+// Nu Game Engine is licensed under the Nu Game Engine Noncommercial License.
+// See https://github.com/bryanedds/Nu/blob/master/License.md.
+
+namespace Nu
+open System
+open System.Numerics
+open ImGuiNET
+open Prime
+
+/// HID input functions for the world.
+[<AutoOpen>]
+module WorldInputModule =
+
+    type World with
+
+        /// Convert a MouseButton to SDL's representation.
+        static member internal toSdlMouseButton mouseButton =
+            MouseState.toSdlButton mouseButton
+
+        /// Convert SDL's representation of a mouse button to a MouseButton.
+        static member internal toNuMouseButton mouseButton =
+            MouseState.toNuButton mouseButton
+
+        /// Get the position of the mouse.
+        static member getMousePosition (world : World) =
+            match World.tryGetWindowPixelDensity world with
+            | Some pixelDensity ->
+                let viewport = world.WindowViewport
+                let offset = viewport.Bounds.Min
+                let margin = v2 (single offset.X) (single offset.Y)
+                MouseState.getPositionSdl () * pixelDensity - margin
+            | None -> v2Zero
+
+        /// Get the 2d inset position of the mouse.
+        static member getMousePosition2dInset (world : World) =
+            let viewport = world.WindowViewport
+            let mousePosition = World.getMousePosition world
+            Viewport.mouseTo2dInner world.Eye2dCenter world.Eye2dSize mousePosition viewport
+
+        /// Get the 2d world position of the mouse.
+        static member getMousePosition2dWorld absolute (world : World) =
+            let viewport = world.WindowViewport
+            let mousePosition = World.getMousePosition world
+            Viewport.mouseToWorld2d absolute world.Eye2dCenter world.Eye2dSize mousePosition viewport
+
+        /// Get the 3d screen position of the mouse.
+        static member getMousePosition3dScreen (world : World) =
+            Viewport.mouseToScreen3d (World.getMousePosition world) world.WindowViewport
+
+        /// Get the 3d world ray of the mouse.
+        static member getMouseRay3dWorld (world : World) =
+            let mousePosition = World.getMousePosition world
+            Viewport.mouseToWorld3d world.Eye3dCenter world.Eye3dRotation world.Eye3dFieldOfView mousePosition world.WindowViewport
+
+        /// Get the scroll of the mouse.
+        static member getMouseScroll world =
+            ignore (world : World)
+            MouseState.getScroll ()
+
+        /// Check that the given mouse button is down.
+        static member isMouseButtonDown mouseButton world =
+            ignore (world : World)
+            let io = ImGui.GetIO ()
+            if not (io.WantCaptureMouseGlobal)
+            then MouseState.isButtonDown mouseButton
+            else false
+
+        /// Check that the given mouse button is up.
+        static member isMouseButtonUp mouseButton world =
+            ignore (world : World)
+            MouseState.isButtonUp mouseButton
+
+        /// Check that the given mouse button was just pressed.
+        static member isMouseButtonPressed mouseButton world =
+            ignore (world : World)
+            let io = ImGui.GetIO ()
+            if not (io.WantCaptureMouseGlobal)
+            then MouseState.isButtonPressed mouseButton
+            else false
+
+        /// Check that the given mouse button was just released.
+        static member isMouseButtonReleased mouseButton world =
+            ignore (world : World)
+            let io = ImGui.GetIO ()
+            if not (io.WantCaptureKeyboardGlobal)
+            then MouseState.isButtonReleased mouseButton
+            else false
+
+        /// Get how much the mouse has just scrolled.
+        static member getMouseScrolled world =
+            ignore (world : World)
+            let io = ImGui.GetIO ()
+            if not (io.WantCaptureKeyboardGlobal)
+            then MouseState.getScrolled ()
+            else 0.0f
+
+        /// Check that the mouse has just scrolled up.
+        static member isMouseScrolledUp world =
+            ignore (world : World)
+            let io = ImGui.GetIO ()
+            if not (io.WantCaptureKeyboardGlobal)
+            then MouseState.isScrolledUp ()
+            else false
+
+        /// Check that the mouse has just scrolled down.
+        static member isMouseScrolledDown world =
+            ignore (world : World)
+            let io = ImGui.GetIO ()
+            if not (io.WantCaptureKeyboardGlobal)
+            then MouseState.isScrolledDown ()
+            else false
+
+        /// Check that the given keyboard key is down.
+        static member isKeyboardKeyDown key world =
+            ignore (world : World)
+            let io = ImGui.GetIO ()
+            if not (io.WantCaptureKeyboardGlobal)
+            then KeyboardState.isKeyDown key
+            else false
+
+        /// Check that the given keyboard key is up.
+        static member isKeyboardKeyUp key world =
+            ignore (world : World)
+            KeyboardState.isKeyUp key
+
+        /// Check that the given keyboard key was just pressed.
+        static member isKeyboardKeyPressed key world =
+            ignore (world : World)
+            let io = ImGui.GetIO ()
+            if not (io.WantCaptureKeyboardGlobal)
+            then KeyboardState.isKeyPressed key
+            else false
+
+        /// Check that the given keyboard key was just pressed.
+        static member isKeyboardKeyReleased key world =
+            ignore (world : World)
+            let io = ImGui.GetIO ()
+            if not (io.WantCaptureKeyboardGlobal)
+            then KeyboardState.isKeyReleased key
+            else false
+
+        /// Check that a keyboard alt key is down.
+        static member isKeyboardAltDown world =
+            ignore (world : World)
+            let io = ImGui.GetIO ()
+            if not (io.WantCaptureKeyboardGlobal)
+            then KeyboardState.isAltDown ()
+            else false
+
+        /// Check that a keyboard alt key is up.
+        static member isKeyboardAltUp world =
+            ignore (world : World)
+            KeyboardState.isAltUp ()
+
+        /// Check that a keyboard enter key is down.
+        static member isKeyboardEnterDown world =
+            ignore (world : World)
+            let io = ImGui.GetIO ()
+            if not (io.WantCaptureKeyboardGlobal)
+            then KeyboardState.isEnterDown ()
+            else false
+
+        /// Check that a keyboard enter key is up.
+        static member isKeyboardEnterUp world =
+            ignore (world : World)
+            KeyboardState.isEnterUp ()
+
+        /// Check that a keyboard enter key was just pressed.
+        static member isKeyboardEnterPressed world =
+            ignore (world : World)
+            let io = ImGui.GetIO ()
+            if not (io.WantCaptureKeyboardGlobal)
+            then KeyboardState.isEnterPressed ()
+            else false
+
+        /// Check that a keyboard enter key was just released.
+        static member isKeyboardEnterReleased world =
+            ignore (world : World)
+            let io = ImGui.GetIO ()
+            if not (io.WantCaptureKeyboardGlobal)
+            then KeyboardState.isEnterReleased ()
+            else false
+
+        /// Check that a keyboard ctrl key is down.
+        static member isKeyboardCtrlDown world =
+            ignore (world : World)
+            KeyboardState.isCtrlDown ()
+
+        /// Check that a keyboard ctrl key is up.
+        static member isKeyboardCtrlUp world =
+            ignore (world : World)
+            KeyboardState.isCtrlUp ()
+
+        /// Check that a keyboard shift key is down.
+        static member isKeyboardShiftDown world =
+            ignore (world : World)
+            KeyboardState.isShiftDown ()
+
+        /// Check that a keyboard shift key is up.
+        static member isKeyboardShiftUp world =
+            ignore (world : World)
+            KeyboardState.isShiftUp ()
+
+        /// Check that a keyboard's num lock is active.
+        static member isKeyboardNumLocked world =
+            ignore (world : World)
+            KeyboardState.isNumLocked ()
+
+        /// Get the number of open gamepad.
+        static member getGamepadCount world =
+            ignore (world : World)
+            GamepadState.getGamepadCount ()
+
+        /// Convert a GamepadAxis to SDL's representation.
+        static member toSdlAxis gamepadAxis world =
+            ignore (world : World)
+            GamepadState.toSdlAxis gamepadAxis
+
+        /// Convert SDL's representation of an axis to a GamepadAxis.
+        static member toNuAxis gamepadAxis world =
+            ignore (world : World)
+            GamepadState.toNuAxis gamepadAxis
+
+        /// Convert a GamepadButton to SDL's representation.
+        static member toSdlButton gamepadButton world =
+            ignore (world : World)
+            GamepadState.toSdlButton gamepadButton
+
+        /// Try to convert SDL's representation of a joystick button to a GamepadButton.
+        static member tryToNuButton gamepadButton world =
+            ignore (world : World)
+            GamepadState.tryToNuButton gamepadButton
+
+        /// Get the given gamepad's left joystick axes.
+        static member getStickLeft index world =
+            ignore (world : World)
+            GamepadState.getStickLeft index
+
+        /// Get the given gamepad's right joystick axes.
+        static member getStickRight index world =
+            ignore (world : World)
+            GamepadState.getStickRight index
+
+        /// Get the given gamepad's left trigger axis.
+        static member getTriggerLeft index world =
+            ignore (world : World)
+            GamepadState.getTriggerLeft index
+
+        /// Get the given gamepad's right trigger axis.
+        static member getTriggerRight index world =
+            ignore (world : World)
+            GamepadState.getTriggerRight index
+
+        /// Check that the given gamepad's button is down.
+        static member isButtonDown index button world =
+            ignore (world : World)
+            GamepadState.isButtonDown index button
+
+        /// Check that the given gamepad's button is up.
+        static member isButtonUp index button world =
+            ignore (world : World)
+            not (GamepadState.isButtonDown index button)

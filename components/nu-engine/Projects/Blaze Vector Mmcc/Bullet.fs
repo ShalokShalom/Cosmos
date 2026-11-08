@@ -1,0 +1,42 @@
+﻿namespace BlazeVector
+open System
+open System.Numerics
+open Prime
+open Nu
+open BlazeVector
+
+type BulletCommand =
+    | Update
+    | Penetration
+    interface Command
+
+type BulletDispatcher () =
+    inherit Entity2dDispatcher<int64, Message, BulletCommand> (true, false, false, fun world -> world.UpdateTime)
+
+    static member Facets =
+        [typeof<RigidBodyFacet>
+         typeof<StaticSpriteFacet>]
+
+    override this.Definitions (_, _) =
+        [Entity.Size == v3 16.0f 16.0f 0.0f
+         Entity.Presence == Omnipresent
+         Entity.BodyType == Dynamic
+         Entity.BodyShape == SphereShape { Radius = 0.5f; TransformOpt = None; PropertiesOpt = None }
+         Entity.Restitution == 0.5f
+         Entity.LinearDamping == 0.0f
+         Entity.Substance == Mass 0.02f
+         Entity.CollisionDetection == Continuous
+         Entity.Gravity == GravityIgnore
+         Entity.CollisionDetection == Continuous
+         Entity.Sensor == true
+         Entity.StaticImage == Assets.Gameplay.PlayerBulletImage
+         Entity.UpdateEvent => Update
+         Entity.BodyPenetrationEvent => Penetration]
+
+    override this.Command (startTime, command, entity, world) =
+        match command with
+        | Update ->
+            let localTime = world.UpdateTime - startTime
+            if localTime = Constants.Gameplay.BulletLifeTime then World.destroyEntity entity world
+        | Penetration ->
+            World.destroyEntity entity world

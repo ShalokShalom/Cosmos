@@ -1,0 +1,21 @@
+[Unit]
+Description=Scale SageFs MCP daemon
+Documentation=file:%h/Projects/Scale/docs/process/sagefs.typ
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=%h/Projects/Scale
+Environment=DOTNET_ROOT=/usr/share/dotnet
+Environment=PATH=/usr/share/dotnet:%h/.dotnet/tools:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin
+Environment=SAGEFS_MCP_PORT=37749
+ExecStart=%h/.dotnet/tools/sagefs
+Restart=on-failure
+RestartSec=2
+KillMode=control-group
+TimeoutStopSec=20
+UMask=0022
+
+[Install]
+WantedBy=default.target

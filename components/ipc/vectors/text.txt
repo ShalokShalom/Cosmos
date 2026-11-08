@@ -1,0 +1,1 @@
+(messageId = 2, target = 1, sender = 0, reply = 0, operation = 4, bodyKind = 1, bodyNumber = 0, bodyText = "down normal")

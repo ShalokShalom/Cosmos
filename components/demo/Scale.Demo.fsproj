@@ -1,0 +1,25 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Library</OutputType>
+    <TargetFramework>net10.0</TargetFramework>
+    <RootNamespace>Scale</RootNamespace>
+  </PropertyGroup>
+  <ItemGroup>
+    <Compile Include="generated/sample-properties.fs" />
+    <Compile Include="generated/numeric-sample.fs" />
+    <Compile Include="generated/no-condition-sample.fs" />
+    <Compile Include="generated/possibility-sample.fs" />
+    <Compile Include="generated/transition-sample.fs" />
+    <Compile Include="demo-domain.fs" />
+    <Compile Include="demo/generated/PlayerSpecificationPristine.fs" />
+    <Compile Include="demo/generated/PlayerSpecificationRefined.fs" />
+    <Compile Include="fixed-specification-acceptance.fs" />
+    <Compile Include="demo.fs" />
+  </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="../core/Scale.Core.fsproj" />
+    <ProjectReference Include="../verification/typing/Scale.Typing.fsproj" />
+    <ProjectReference Include="../prelude/Scale.Prelude.fsproj" />
+    <ProjectReference Include="../verification/Scale.Verification.fsproj" />
+  </ItemGroup>
+</Project>

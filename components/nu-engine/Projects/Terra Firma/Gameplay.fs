@@ -1,0 +1,115 @@
+﻿namespace TerraFirma
+open System
+open System.Numerics
+open Prime
+open Nu
+open TerraFirma
+
+// this represents the state of gameplay simulation.
+type GameplayState =
+    | Playing
+    | Quit
+    
+// this extends the Screen API to expose the GameplayState and Score properties.
+[<AutoOpen>]
+module GameplayExtensions =
+    type Screen with
+        member this.GetGameplayState world : GameplayState = this.Get (nameof Screen.GameplayState) world
+        member this.SetGameplayState (value : GameplayState) world = this.Set (nameof Screen.GameplayState) value world
+        member this.GameplayState = lens (nameof Screen.GameplayState) this this.GetGameplayState this.SetGameplayState
+        member this.GetScore world : int = this.Get (nameof Screen.Score) world
+        member this.SetScore (value : int) world = this.Set (nameof Screen.Score) value world
+        member this.Score = lens (nameof Screen.Score) this this.GetScore this.SetScore
+
+// this is the dispatcher that defines the behavior of the screen where gameplay takes place.
+type GameplayDispatcher () =
+    inherit ScreenDispatcherImSim ()
+
+    // here we define default property values
+    static member Properties =
+        [define Screen.GameplayState Quit
+         define Screen.Score 0]
+
+    // here we define the behavior of our gameplay
+    override this.Process (selectionResults, screen, world) =
+
+        // only process when selected
+        if screen.GetSelected world then
+
+            // process screen selection
+            let selecting = FQueue.contains Select selectionResults
+            if selecting then
+                screen.SetGameplayState Playing world
+                screen.SetScore 0 world
+
+            // begin scene declaration
+            let sceneGroupFilePath = "Assets/Gameplay/Scene.nugroup"
+            World.beginGroupFromFile Simulants.GameplayScene.Name sceneGroupFilePath [] world
+
+            // process nav sync at end of selection frame since optimized scene entities (like frozen entities) won't
+            // have their nav info registered until then.
+            if selecting then
+                let sceneNavFilePath = PathF.ChangeExtension (sceneGroupFilePath, ".nav")
+                World.defer (World.synchronizeNav3d false (Some sceneNavFilePath) screen) screen world
+
+            // declare player as protected from accidental deletion in Gaia
+            World.doEntity<PlayerDispatcher> Simulants.GameplayPlayer.Name [Entity.Protection .= ManualProtection] world
+
+            // collect characters for processing
+            let characters = World.getEntitiesAs<CharacterDispatcher> Simulants.GameplayScene world
+
+            // process character attacks
+            for character in characters do
+                for attacked in World.doSubscription "Attack" character.AttackEvent world do
+                    let damage = 1 // a single unit of damage
+                    attacked.HitPoints.Map (fun hp -> hp - damage) world
+                    World.publish damage attacked.DamageEvent screen world
+
+            // process character damages
+            for character in characters do
+                for _ in World.doSubscription "Damage" character.DamageEvent world do
+                    if character.GetHitPoints world > 0 then
+                        if not (character.GetActionState world).IsInjuryState then
+                            character.SetActionState (InjuryState { InjuryTime = world.UpdateTime }) world
+                            character.LinearVelocity.Map ((*) v3Up) world // zero out horizontal velocity on injury
+                            World.playSound 0.0f 0.0f 1.0f Assets.Gameplay.InjureSound world
+                    elif not (character.GetActionState world).IsWoundState then
+                        character.SetActionState (WoundState { WoundTime = world.UpdateTime }) world
+                        character.LinearVelocity.Map ((*) v3Up) world // zero out horizontal velocity on wound
+                        World.playSound 0.0f 0.0f 1.0f Assets.Gameplay.InjureSound world
+
+            // process character deaths
+            for character in characters do
+                if World.doSubscriptionAny "Death" character.DeathEvent world then
+                    match character.GetCharacterType world with
+                    | Enemy ->
+                        screen.Score.Map ((+) 100) world
+                        World.destroyEntity character world
+                    | Player ->
+                        screen.SetGameplayState Quit world
+
+            // update eye to look at player while game time is advancing
+            if world.TimeAdvancing then
+                let position = Simulants.GameplayPlayer.GetPositionInterpolated world
+                let rotation = Simulants.GameplayPlayer.GetRotationInterpolated world * Quaternion.CreateFromAxisAngle (v3Right, -0.1f)
+                World.setEye3dCenter (position + v3Up * 1.75f - rotation.Forward * 3.0f) world
+                World.setEye3dRotation rotation world
+
+            // declare score text
+            let scoreText = "Score: " + string (screen.GetScore world)
+            World.doText "Score" [Entity.Position .= v3 260.0f 155.0f 0.0f; Entity.Elevation .= 10.0f; Entity.Text @= scoreText] world
+
+            // declare pause button
+            if World.doButton "Pause" [Entity.Position .= v3 232.0f -104.0f 0.0f; Entity.Elevation .= 10.0f; Entity.Text .= "Pause"] world then
+                World.setTimeAdvancing (not world.TimeAdvancing) world
+
+            // declare quit button
+            if World.doButton "Quit" [Entity.Position .= v3 232.0f -144.0f 0.0f; Entity.Elevation .= 10.0f; Entity.Text .= "Quit"] world then
+                screen.SetGameplayState Quit world
+
+            // ensure game is unpaused when quitting
+            if screen.GetGameplayState world = Quit then
+                World.setTimeAdvancing true world
+
+            // end scene declaration
+            World.endGroup world

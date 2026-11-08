@@ -1,0 +1,28 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+    <PropertyGroup>
+        <TargetFramework>net10.0</TargetFramework>
+    </PropertyGroup>
+
+    <Import Project="../../Nu/Nu.targets" />
+
+    <ItemGroup>
+        <None Include="Assets\*" />
+        <None Include="Assets\*\*" />
+        <Compile Include="Assets.fs" />
+        <Compile Include="Constants.fs" />
+        <Compile Include="Simulants.fs" />
+        <Compile Include="Events.fs" />
+        <Compile Include="Bullet.fs" />
+        <Compile Include="Enemy.fs" />
+        <Compile Include="Player.fs" />
+        <Compile Include="Gameplay.fs" />
+        <Compile Include="BlazeVector.fs" />
+        <Compile Include="BlazeVectorPlugin.fs" />
+        <Compile Include="Program.fs" />
+        <None Include="AssetGraph.nuag" />
+        <None Include="Overlayer.nuol" />
+        <None Include="App.config" />
+    </ItemGroup>
+
+</Project>

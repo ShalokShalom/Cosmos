@@ -1,0 +1,50 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Library</OutputType>
+    <TargetFramework>net10.0</TargetFramework>
+    <RootNamespace>Scale</RootNamespace>
+    <EnableWriter Condition="'$(EnableWriter)' == '' and '$(Configuration)' == 'Debug'">true</EnableWriter>
+    <EnableWriter Condition="'$(EnableWriter)' == ''">false</EnableWriter>
+    <DefineConstants Condition="'$(EnableWriter)' == 'true'">$(DefineConstants);ENABLE_WRITER</DefineConstants>
+  </PropertyGroup>
+  <ItemGroup>
+    <Compile Include="evaluator/common.fs" />
+    <Compile Include="evaluator/code.fs" />
+    <Compile Include="evaluator/program.fs" />
+    <Compile Include="evaluator/stack.fs" />
+    <Compile Include="evaluator/history.fs" />
+    <Compile Include="evaluator/quotation-run.fs" />
+    <Compile Include="evaluator/signatures.fs" />
+    <Compile Include="evaluator/stack-inference.fs" />
+    <Compile Include="evaluator/lowering.fs" />
+    <Compile Include="evaluator/cell-system.fs" />
+    <Compile Include="evaluator/closure.fs" />
+    <Compile Include="scheduler.fs" />
+    <Compile Include="evaluator/channel.fs" />
+    <Compile Include="evaluator/scheduler.fs" />
+    <Compile Include="evaluator/value-sets.fs" />
+    <Compile Include="evaluator/class-system.fs" />
+    <Compile Include="evaluator/with-fields.fs" />
+    <Compile Include="evaluator/condition.fs" />
+    <Compile Include="evaluator/runtime-guard.fs" />
+    <Compile Include="evaluator/channel-event.fs" />
+    <Compile Include="evaluator/control.fs" />
+    <Compile Include="evaluator/ownership.fs" />
+    <Compile Include="evaluator/bookmark.fs" />
+    <Compile Include="evaluator/environment.fs" />
+    <Compile Include="evaluator/pattern.fs" />
+    <Compile Include="evaluator/set-algebra.fs" />
+    <Compile Include="evaluator/dispatch.fs" />
+    <Compile Include="evaluator/word.fs" />
+    <Compile Include="evaluator/callable.fs" />
+    <Compile Include="evaluator/evaluator.fs" />
+    <Compile Include="evaluator/kernel-bridge.fs" />
+    <Compile Include="writer-runtime.fs" />
+    <Compile Include="writer/il-writer.fs" Condition="'$(EnableWriter)' == 'true'" />
+  </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="../core/Scale.Core.fsproj" />
+    <ProjectReference Include="../verification/typing/Scale.Typing.fsproj" />
+    <ProjectReference Include="../kernel/Scale.Kernel.fsproj" />
+  </ItemGroup>
+</Project>

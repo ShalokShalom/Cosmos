@@ -1,0 +1,28 @@
+﻿namespace MyGame
+open System
+open System.Numerics
+open Prime
+open Nu
+
+// this is the dispatcher that customizes the top-level behavior of our game.
+type MyGameDispatcher () =
+    inherit GameDispatcherImSim ()
+
+    // here we define the game's behavior
+    override this.Process (game, world) =
+
+        // process in the game's ImSim context
+        World.beginScreen "Screen" true Vanilla [] world |> ignore
+        World.beginGroup "Scene" [] world
+        let rotation = Quaternion.CreateFromAxisAngle ((v3 1.0f 0.75f 0.5f).Normalized, world.UpdateTime % 360L |> single |> degToRadF)
+        World.doStaticModel "StaticModel" [Entity.Scale .= v3Dup 0.5f; Entity.Rotation @= rotation] world
+        let exit = World.doButton "Exit" [Entity.Position .= v3 232.0f -144.0f 0.0f; Entity.Text .= "Exit"] world
+        if exit && world.Unaccompanied then World.exit world
+        World.endGroup world
+        World.endScreen world
+
+        // when not in editor, handle close window button or Alt+F4
+        if world.Unaccompanied then
+            if  World.doSubscriptionAny "Exit" game.ExitRequestEvent world ||
+                World.isKeyboardAltDown world && World.isKeyboardKeyDown KeyboardKey.F4 world then
+                World.exit world

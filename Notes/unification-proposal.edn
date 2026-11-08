@@ -1,0 +1,539 @@
+; Scale unification proposal
+; Machine-readable design record. The core (S0-S3) is implemented. The S4
+; directions are chosen in :directions and Notes/deferred-directions.md.
+
+{:proposal/id "scale-unification-rows-sets-effects"
+ :title "Kinded unification with data rows, effect sets, and contextual effects"
+ :status :implemented-core
+ :date "2026-11-06"
+ :scope
+ {:committed
+  ["one kinded unification model"
+   "data rows for open structural labels"
+   "effect sets for effects, closed and open"
+   "closed records with field payloads"
+   "contextual effect polymorphism through set variables"
+   "host inference-loop migration to open effect sets"
+   "a self-hosted unifier in the concatenated language"
+   "shared-corpus tests against the host model"]
+  :non-goals
+  ["handlers and effect subtraction"
+   "second-class functions"
+   "full self-typing of the host checker"
+   "open records with absorbed payloads"
+   "AC unification"
+   "lacks constraints"
+   "performance work"]}
+
+ :context
+ {:host
+  {:type "Variable | Primitive | Sort | Record of Map<string, Type> | Function of Type list * Type * EffectSet"
+   :unify "variables with occurs check; primitives and sorts by equality; records by equal key set and field-wise payload unification; functions by arity, exact effect equality, and parameter/result unification"
+   :effects "EffectSet = Set<string>; function effects are exact; a call unions target, argument, and latent effects"
+   :shapes "InferenceState.Shapes maps a shape name to its field names; a Message of a known shape infers a closed Record"}
+  :rows
+  {:module "RowTypes"
+   :term "Empty | Extend of label * Row | Variable of RowVariable"
+   :unify "closed rows by label set; an open row absorbs the other side's labels; two open rows meet at a fresh tail; occurs check; duplicate labels refused"
+   :limit "labels only; no field payloads"}
+  :sets
+  {:module "LabelSets"
+   :term "Closed of Set<label> | Open of Set<label> * SetVariable"
+   :unify "closed sets by equality; an open set absorbs; two open sets meet at a fresh unknown; occurs check"
+   :limit "no row order; no lacks constraint; idempotence does the work"}
+  :records
+  {:status "closed records are integrated into TypeRetrieval; the kinded model also carries closed records with a closed label set"
+   :inference "Message(kind, fields) infers Record(Map.ofList (zip shapeFields fieldTypes))"
+   :limit "no open records; no row tail; no field payload absorption"}
+  :effects
+  {:status "the host loop and the kinded model both use LabelSet<string>, closed or open"
+   :polymorphism "Scheme quantifies TypeVariable and SetVariable; generalization and instantiation freshen both"
+   :contextual "a call adds a block's latent effects through the set unifier; the host loop uses the same open set shape"}
+  :self-hosted
+  {:status "implemented as a test fixture"
+   :language "the concatenated Scale language"
+   :available ["shapes" "cons lists" "recursion" "local binding" "multiple dispatch" "Fail"]
+   :fixture "components/verification/tests/fixtures/unification.book"
+   :covered ["type variables" "primitives" "functions with effect sets" "closed records" "rows" "sets" "kind refusal"]}
+ :tests
+ {:suite "1685 checks: 1638 examples, 47 properties"
+   :rows "5 checks"
+   :sets "4 checks"
+   :records "4 checks"
+   :kinded "7 checks"
+   :host-effects "5 checks"
+   :self-hosted "14 checks"}}
+
+ :problem
+ ["The host unifier is a closed-record, closed-effect unifier. It cannot represent an open row, an open effect set, or a function whose effects depend on an argument."
+  "RowTypes and LabelSets exist but are not part of one unification model. A row term and a set term cannot meet, but nothing states that boundary in the type system."
+  "The concatenated language can express the unification algorithm once it has row and set terms. Without them the self-hosted unifier cannot represent open structural types or effect tails."
+  "The host and the self-hosted unifier need one reference semantics so they can be compared by tests instead of by prose."]
+
+ :target-model
+ {:principle "one dispatcher, three kinds, no cross-kind binding"
+  :kinds
+  {:type "type terms: variables, primitives, sorts, records, functions"
+   :row "data rows: ordered labels with an optional nominal tail"
+   :set "effect sets: unordered labels with an optional nominal remainder"}
+  :variables
+  {:type "TypeVariable of int"
+   :row "RowVariable of int"
+   :set "SetVariable of int"
+   :rule "the three namespaces are nominal; a type variable never binds a row or set term"}
+  :invariants
+  ["No unifier binds a variable of one kind to a term of another kind."
+   "A row and a set never unify, even when their labels are identical."
+   "Records use closed label sets in this slice; rows carry labels only."
+   "Effects use sets; a function's effect set is its own requirement."
+   "Every refusal is a named value, never an exception and never a string."
+   "The adapter agrees with the host unifier on a closed record; the self-hosted fixture returns the expected host-model verdicts."]}
+
+ :term-grammar
+ {:host
+  {:type
+   ["Variable of TypeVariable"
+    "Primitive of string"
+    "Sort of string"
+    "Record of Map<string, Type>"
+    "Function of Type list * Type * LabelSets.LabelSet<string>"]
+   :row
+   ["Empty"
+    "Extend of string * Row"
+    "Variable of RowVariable"]
+   :set
+   ["Closed of Set<string>"
+    "Open of Set<string> * SetVariable"]}
+  :self-hosted
+  [{:shape "nil"}
+   {:shape "cons" :fields ["head" "tail"]}
+   {:shape "tvar" :fields ["id"]}
+   {:shape "prim" :fields ["name"]}
+   {:shape "rec" :fields ["fields"]}
+   {:shape "field" :fields ["name" "type"]}
+   {:shape "fn" :fields ["params" "result" "effects"]}
+   {:shape "rowempty"}
+   {:shape "rowextend" :fields ["label" "rest"]}
+   {:shape "rowvar" :fields ["id"]}
+   {:shape "setclosed" :fields ["labels"]}
+   {:shape "setopen" :fields ["labels" "id"]}
+   {:shape "setvar" :fields ["id"]}
+   {:shape "pair" :fields ["left" "right"]}
+   {:shape "ok" :fields ["value" "next"]}
+   {:shape "error" :fields ["reason"]}]
+  :representation
+  ["lists are cons cells; the empty list is nil"
+   "a substitution is a list of pair terms"
+   "a record is a list of field terms; its labels are derived from the field names"
+   "a row is rowextend/rowempty/rowvar"
+   "a set is setclosed/setopen over a label list"
+   "the result is ok(value, next) or error(reason)"]}
+
+ :unifier-state
+ {:host
+  {:types "Map<TypeVariable, Type>"
+   :effects "LabelSets.SetSubstitution<string>"
+   :rows "RowTypes.RowSubstitution<string>"
+   :next "one monotone integer per kind; the host adapter currently shares the type counter"}
+  :self-hosted
+  {:substitution "list of pair terms"
+   :next "an integer threaded through every call"
+   :rule "state is a value; no mutation"}}
+
+ :type-unification
+ {:inputs [:left :right :state]
+  :outputs [:ok-state :error]
+  :rules
+  [{:when "both Variable with the same identity" :then "ok, unchanged"}
+   {:when "Variable v and term t" :then "occurs check; bind v to t"}
+   {:when "both Primitive with equal name" :then "ok, unchanged"}
+   {:when "both Sort with equal name" :then "ok, unchanged"}
+   {:when "both Record" :then "record-unification"}
+   {:when "both Function" :then "function-unification"}
+   {:otherwise "TypeMismatch"}]
+  :refusals
+  ["OccursCheck"
+   "TypeMismatch"
+   "ArityMismatch"
+   "EffectMismatch"
+   "KindMismatch"]}
+
+ :record-unification
+ {:inputs [:left :right :state]
+  :outputs [:ok-state :error]
+  :rules
+  [{:when "the label sets differ" :then "TypeMismatch with context record fields"}
+   {:when "the label sets are equal" :then "unify the payloads in key order; the record keeps the closed label set"}
+   {:when "a payload unification fails" :then "return that failure unchanged"}]
+  :invariants
+  ["a record is closed in this slice"
+   "the field map keys equal the label set"
+   "field order is presentation only"
+   "payloads unify with the type unifier, never with the row or set unifier"]
+  :future
+  {:open-records
+   {:status :deferred
+    :reason "an open record must carry payloads for labels absorbed by a row variable; that is a separate design decision"
+    :shape "a record would be a row of field terms, where a field is a name and a type"}}}
+
+ :function-unification
+ {:inputs [:left :right :state]
+  :outputs [:ok-state :error]
+  :rules
+  [{:when "the parameter counts differ" :then "ArityMismatch"}
+   {:when "the parameter counts match" :then "unify parameters pairwise and then results"}
+   {:when "the effect sets are present" :then "unify effects with the set unifier"}
+   {:when "an effect unification fails" :then "EffectMismatch with context function effects"}]
+  :effect-polymorphism
+  {:status "done"
+   :mechanism "function effects are LabelSets.LabelSet<string>; a Scheme quantifies both TypeVariable and SetVariable; instantiation freshens both"
+   :rule "a function with an open effect set unifies with a function with concrete effects by binding the set variable"
+   :contextual
+   "A call unions the callee's effects with the argument-expression effects. A function argument's latent effects are carried by its function type and are bound through set unification; they are not double-counted because evaluating a function literal has no effects."}
+  :refusals
+  ["ArityMismatch"
+   "EffectMismatch"
+   "OccursCheck"]}
+
+ :row-unification
+ {:inputs [:left :right :substitution :next-variable]
+  :outputs [:ok-substitution-next :error]
+  :rules
+  [{:when "both Empty" :then "ok"}
+   {:when "both Extend with equal labels" :then "unify the tails"}
+   {:when "both Extend with different labels" :then "rewrite: find the left label in the right tail and the right label in the left tail; unify the remainders; fail if either label is missing"}
+   {:when "Variable v and row r" :then "occurs check; bind v to r"}
+   {:when "row r and Variable v" :then "symmetric"}
+   {:when "Variable v1 and Variable v2" :then "bind one to the other"}
+   {:when "only one side has labels and the other side has a Variable tail" :then "bind the tail to the extra labels plus the other side's tail"}
+   {:when "only one side has labels and the other side is closed" :then "Mismatch"}]
+  :invariants
+  ["labels are a set for equality; order is presentation only"
+   "no duplicate label"
+   "occurs check prevents a cyclic row"
+   "closed-first: open rows are introduced only by a consumer"
+   "no lacks constraint; set semantics plus the duplicate check does that work"]
+  :refusals
+  ["OccursCheck"
+   "Mismatch"
+   "DuplicateLabel"]}
+
+ :set-unification
+ {:inputs [:left :right :substitution :next-variable]
+  :outputs [:ok-substitution-next :error]
+  :rules
+  [{:when "Closed a and Closed b" :then "a = b"}
+   {:when "Open(known, v) and Closed b" :then "known is a subset of b; bind v to b - known"}
+   {:when "Closed a and Open(known, v)" :then "symmetric"}
+   {:when "Open(k1, v1) and Open(k2, v2) with v1 = v2" :then "k1 = k2"}
+   {:when "Open(k1, v1) and Open(k2, v2) with v1 != v2" :then "allocate one fresh unknown; bind v1 to k2 - k1 plus the unknown; bind v2 to k1 - k2 plus the unknown"}
+   {:when "a known set is not a subset" :then "Mismatch"}]
+  :invariants
+  ["no order"
+   "no duplicate label"
+   "set idempotence"
+   "occurs check"
+   "a set variable and a row variable never meet"]
+  :refusals
+  ["OccursCheck"
+   "Mismatch"]}
+
+ :kind-dispatch
+ {:rule "the caller names the kind; the dispatcher refuses a term of another kind"
+  :surface
+  ["unifyType : TypeTerm -> TypeTerm -> State -> Result<State, UnificationError>"
+   "unifyRow : Row<string> -> Row<string> -> State -> Result<State, UnificationError>"
+   "unifySet : LabelSet<string> -> LabelSet<string> -> State -> Result<State, UnificationError>"
+   "unifyKinded : KindedTerm -> KindedTerm -> State -> Result<State, UnificationError>"]
+  :refusal "KindMismatch of left-kind, right-kind, context"}
+
+ :host-adapter
+ {:purpose "connect the existing closed host types to the kinded model without changing the host inference loop in this slice"
+  :mapping
+  {:TypeRetrieval.Variable "Unification.Variable"
+   :TypeRetrieval.Primitive "Unification.Primitive"
+   :TypeRetrieval.Sort "Unification.Sort"
+   :TypeRetrieval.Record "Unification.Record with a closed label set and a field map"
+   :TypeRetrieval.Function "Unification.Function with a closed effect set"}
+  :direction "both ways for the closed fragment"
+  :acceptance "the adapter and the host unifier agree on a closed record check"}
+
+ :self-hosted-unifier
+ {:purpose "express the same algorithm in the concatenated language, with rows and sets as values"
+  :terms "the shapes in :term-grammar :self-hosted"
+  :state "a substitution is a list of pair terms; next is an integer"
+  :entry "unify(left right subst next) returns ok(value next) or error(reason)"
+  :algorithm
+  ["walk applies the substitution until the term is not a bound variable"
+   "occurs walks the term and tests variable identity"
+   "unify dispatches with a nested match on the left and right constructors"
+   "unifyRow implements the row rules"
+   "unifySet implements the set rules"
+   "unifyRecord unifies the label sets and then the field payloads"
+   "unifyFunction unifies parameters, result, and effects"
+   "every refusal returns an error shape with a named reason"]
+  :language-use
+  {:match "nested match on shapes; the fixture does not use generic dispatch"
+   :lists "cons cells and recursion for parameters, fields, labels, and substitutions"
+   :result "ok and error shapes; no exceptions"
+   :fail "Fail is not used; every refusal is an error shape"}
+  :limits
+  ["the self-hosted unifier is a program, not the host checker"
+   "it does not type itself"
+   "it covers the closed fragment plus open rows and open sets"
+   "handlers are out of scope"]
+  :differential
+  {:corpus "a shared corpus of type variables, primitives, functions, closed records, rows, and sets"
+   :oracle "the host Unification module; the fixture encodes the expected verdicts"
+   :checks ["the same ok or error verdict"
+            "the fixture checks the fresh-set counter"
+            "no exception on any corpus case"]}}
+
+ :stages
+ [{:id "S0"
+   :status :done
+   :scope ["RowTypes" "LabelSets" "closed records in TypeRetrieval" "shape inference" "11 row/set checks" "4 record checks"]
+   :acceptance ["suite green" "docs-check" "line counts current"]}
+  {:id "S1"
+   :status :done
+   :scope ["Unification module with kinds and one dispatcher"
+           "closed records with payloads"
+           "functions with effect sets"
+           "open effect sets and set-variable quantification in the new model"
+           "differential host adapter for the closed fragment"]
+   :acceptance ["record and function differential checks"
+                "open effect set checks"
+                "kind-mismatch checks"
+                "suite green"]}
+  {:id "S2"
+   :status :done
+   :scope ["self-hosted unifier in the concatenated language"
+           "rows, sets, records, functions, variables, primitives"
+           "shared corpus with expected host-model verdicts"]
+   :acceptance ["the book runs every corpus case"
+                "the book returns the expected host-model verdicts"
+                "no exception path"]}
+  {:id "S3"
+   :status :done
+   :scope ["host inference-loop migration to LabelSet<string>"
+           "Scheme quantifies TypeVariable and SetVariable"
+           "generalizeWith and instantiate freshen both"
+           "function unification uses the set unifier"
+           "stateful union of two open effect sets"
+           "contextual call-site effect propagation"]
+   :acceptance ["five host effect-polymorphism checks"
+                "existing exact-effect checks still pass"
+                "suite green"]}
+  {:id "S3a"
+   :status :done
+   :scope ["WordSignature.Effects becomes EffectSet"
+           "WordSignature.QuantifiedEffects"
+           "wordScheme preserves effect variables"
+           "instantiate freshens word effect variables"]
+   :acceptance ["three word-signature effect checks"
+                "existing exact-effect checks still pass"
+                "suite green"]}
+  {:id "S3b"
+   :status :done
+   :scope ["RecordField with name and payload"
+           "open record rows with a nominal tail"
+           "payload absorption and common-field payload unification"
+           "Scheme.QuantifiedRows and instantiation"
+           "host TypeRetrieval.Type migration to open rows"
+           "host adapter for open records"]
+   :acceptance ["four kinded-model open-record checks"
+                "two host open-record checks"
+                "existing closed-record checks still pass"
+                "suite green"]}
+  {:id "S3c"
+   :status :done
+   :scope ["field(name record) surface"
+           "open-row projection and extension in TypeRetrieval"
+           "book host word using the declared shape field order"
+           "named UnknownField and host failures"]
+   :acceptance ["a book with field access passes the check gate"
+                "field access reads named record fields"
+                "suite green"]}
+  {:id "S4"
+   :status :chosen-direction
+   :scope ["typed shallow handler surface"
+           "deep multi-shot handlers"
+           "second-class functions"
+           "self-typing"
+           "lacks constraints"
+           "performance"]
+   :direction "Notes/deferred-directions.md"
+   :reason "each direction is chosen; the staging order keeps the suite green"}]
+
+ :tests
+ {:host
+  ["a closed record unifies with itself"
+   "records with different labels are refused"
+   "records with different payloads are refused"
+   "an open record absorbs a field with its payload"
+   "an open record unifies a common field's payload"
+   "a scheme quantifies a free record row variable"
+   "instantiation freshens the record row variable"
+   "the host open record absorbs a field with its payload"
+   "the host open record unifies a common field's payload"
+   "a book with field access passes the check gate"
+   "field access reads named record fields"
+   "effect subtraction removes a known label"
+   "effect subtraction refuses an open remainder"
+   "a function with an open effect set unifies with concrete effects"
+   "two open effect sets meet at a fresh unknown"
+   "a row and a set are refused by the kind dispatcher"
+   "the host adapter agrees with the host unifier on a closed record"
+   "a scheme quantifies a free effect variable"
+   "instantiation freshens the effect variable"
+   "a block's latent effect reaches the call through an effect-polymorphic parameter"]
+  :self-hosted
+  ["unify tvar with prim returns a substitution"
+   "unify prim with a different prim returns an error"
+   "unify a record with a different payload returns an error"
+   "unify a function with an open effect set binds the set variable"
+   "unify an open row with a closed row absorbs the label"
+   "unify two open sets meets at a fresh unknown"
+   "unify a row with a set returns a kind error"]
+  :properties
+  ["not yet property-tested; the fourteen self-hosted checks are examples"
+   "a future property: unify t t is identity for every closed term t"
+   "a future property: an occurs cycle is refused"]}
+
+ :refusals
+ {:host
+  ["OccursCheck"
+   "TypeMismatch"
+   "ArityMismatch"
+   "EffectMismatch"
+   "EffectOccursCheck"
+   "KindMismatch"
+   "RecordMismatch"
+   "RowMismatch"
+   "SetMismatch"]
+  :self-hosted
+  ["occurs"
+   "prim"
+   "kind"
+   "row"
+   "set"
+   "arity"
+   "param"
+   "result"
+   "field"
+   "record"
+   "missing"
+   "open"]}
+
+ :not-in-core
+ ["handlers and effect subtraction"
+  "second-class functions"
+  "full self-typing"
+  "open records with absorbed payloads"
+  "AC unification"
+  "lacks constraints"
+  "performance work"
+  "effect variables in word signatures"]
+
+ :directions
+ {  :open-records
+  {:choice "payload-aware record row (row-carried fields)"
+   :status :done
+   :reuses ["RowTypes tail/label mechanics" "unifyType"]
+   :why "one row engine serves records and variants; the record layer unifies common payloads with unifyType"
+   :cost "custom label comparison, a payload-aware RecordRow unifier, a payload-conflict rule, and a field-access consumer"
+   :critical "plain RowTypes.unify does not unify payloads; name-only label equality alone would ignore field-type differences"}
+  :handlers
+  {:choice "target: deep multi-shot with second-class blocks; next slice: shallow one-shot with explicit handler values"
+   :effect-subtraction :done
+   :runtime "shallow one-shot with-handler and signal"
+   :reuses ["LabelSets" "Function"]
+   :why "deep multi-shot is the most expressive target; shallow one-shot is the most shared feasible slice"
+   :cost "continuation capture and runtime handler stack for deep multi-shot; shallow one-shot pins semantics first"
+   :critical "deep multi-shot is the least shared option; the current evaluator has no continuation capture"}
+  :second-class
+  {:choice "Block alongside Function, gated on a mandatory checked path or runtime block restriction"
+   :reuses ["parameters" "result" "effects" "application"]
+   :why "keeps first-class closures while adding precise block typing for handlers"
+   :cost "two callable forms, conversion rules, and enforcement"
+   :critical "an optional type checker cannot enforce second-class; the runtime can still store a closure"}
+  :word-effects
+  {:choice "WordSignature.Effects becomes EffectSet plus QuantifiedEffects"
+   :status :done
+   :reuses ["Scheme" "generalize" "instantiate"]
+   :why "removes the last closed-only special case and gives builtins full effect polymorphism"
+   :cost "a field on every signature constructor, an Effects type change, and more registry tests"
+   :critical "QuantifiedEffects alone is insufficient; Set<string> cannot contain a set variable"}
+  :self-typing
+  {:choice "typed unifier plus bootstrap, gated on a user-facing signature surface; the fixture remains the oracle"
+   :reuses ["host checker" "book language" "differential fixture"]
+   :why "the unifier becomes a checked Scale artifact rather than only a fixture"
+   :cost "annotations, a bootstrap plan, and a larger test surface"
+   :critical "the language has no user-facing signature syntax; bootstrap is research, not a vertical slice"}
+  :rows
+  {:choice "lacks constraints when needed; AC is implicit"
+   :reuses ["RowTypes" "set-based label equality"]
+   :why "set equality already gives permutation-insensitive labels; lacks adds negative information without a second AC engine"
+   :cost "solver state and occur/apply rules for negative labels"}
+  :performance
+  {:choice "shared Map/Set representation, profile-driven"
+   :reuses ["host and self-hosted representations"]
+   :why "performance is not a semantic expressiveness choice; a second representation would violate reuse"
+   :cost "only measured hot paths are optimized"}}
+
+ :open-questions
+ [  {:id "Q1"
+   :question "Should the host EffectSet become LabelSets.LabelSet<string> in the inference loop?"
+   :default "yes; S3 migrated the host loop to the same open set model"}
+  {:id "Q2"
+   :question "Should an open record carry payloads in the row itself, or in a parallel payload map?"
+   :default "defer; records are closed in the committed slice"}
+  {:id "Q3"
+   :question "Should effect variables be quantified per scheme, or per word signature only?"
+   :default "per scheme; word signatures remain closed in S3"}
+  {:id "Q4"
+   :question "Should the self-hosted unifier be a book fixture or a shipped book?"
+   :default "a test fixture first; ship only when it is differential-tested"}]
+
+ :acceptance
+ {:checks
+  ["the new module compiles in Scale.Typing"
+   "the host adapter round-trips every closed host type"
+   "the host loop carries open effect sets"
+   "the self-hosted book returns the expected host-model verdicts"
+   "the chosen directions are documented in Notes/deferred-directions.md"
+   "the suite count is updated everywhere"
+   "docs-check and line-count checks pass"
+   "no row and set cross-unification exists"]
+  :evidence
+  ["test names and counts in components/verification/tests/tests.fs"
+   "docs/types/row-and-set-types.typ"
+   "docs/types/type-inference.typ"
+   "components/verification/tests/fixtures/unification.book"]}
+
+ :implementation-map
+ {:new
+  ["components/verification/typing/unification.fs"
+   "components/verification/typing/unification-host.fs"
+   "components/verification/tests/fixtures/unification.book"
+   "Notes/deferred-directions.md"]
+  :changed
+  ["components/verification/typing/Scale.Typing.fsproj"
+   "components/verification/tests/tests.fs"
+   "components/verification/typing/type-retrieval.fs"
+   "components/verification/typing/unification.fs"
+   "components/verification/typing/label-sets.fs"
+   "components/core/host-words.fs"
+   "components/book-host/book-runner.fs"
+   "components/prelude/evaluator/signatures.fs"
+   "docs/types/row-and-set-types.typ"
+   "docs/types/effect-polymorphism.typ"
+   "docs/types/effect-handlers.typ"
+   "docs/language/action/field-access.typ"
+   "docs/types/type-inference.typ"
+   "docs/specification.typ"
+   "docs/now.typ"
+   "docs/process/test-strategy.typ"
+   "README.typ"
+   "justfile"]
+  :counts "1685 checks after the slice; every generated count is synced"}}

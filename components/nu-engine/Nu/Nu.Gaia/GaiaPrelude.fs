@@ -1,0 +1,78 @@
+﻿// Gaia - The Nu Game Engine editor.
+// Required Notice:
+// Copyright (C) Bryan Edds.
+// Gaia - The Nu Game Engine editor is licensed under the Nu Game Engine Noncommercial License.
+// See: https://github.com/bryanedds/Nu/master/License.md
+
+namespace Nu.Gaia
+open System
+open System.Numerics
+open Prime
+open Nu
+open Nu.Gaia
+
+/// The visualization mode of the Gaia editor.
+type ViewMode =
+    | NormalMode
+    | FreeMode
+    | CaptureMode
+
+/// The state of an entity drag operation in the Gaia editor.
+type DragEntityState =
+    | DragEntityPosition2d of DateTime : DateTimeOffset * Snapshotted : bool ref * MousePositionWorldOrig : Vector2 * EntityDragOffset : Vector2 * Entity : Entity
+    | DragEntityRotation2d of DateTime : DateTimeOffset * Snapshotted : bool ref * MousePositionWorldOrig : Vector2 * EntityDragOffset : single * Entity : Entity
+    | DragEntityInactive
+
+/// The state of an eye drag operation in the Gaia editor.
+type DragEyeState =
+    | DragEye2dCenter of Offset : Vector2 * Origin : Vector2
+    | DragEyeInactive
+
+/// The persistent state of the Gaia editor.
+type [<SymbolicExpansion>] GaiaState =
+    { ProjectDllPath : string
+      ProjectEditModeOpt : string option
+      ProjectFreshlyLoaded : bool
+      ProjectImperativeExecution : bool
+      DesiredEye2dCenter : Vector2
+      DesiredEye3dCenter : Vector3
+      DesiredEye3dRotation : Quaternion
+      MasterSoundVolume : single
+      MasterSongVolume : single
+      Snaps2dSelected : bool
+      Snaps2d : single * single * single
+      Snaps3d : single * single * single
+      CreationElevation : single
+      CreationDistance : single
+      AlternativeEyeTravelInput : bool
+      OverlayMode : bool }
+
+    /// Make a Gaia state.
+    static member make
+        dllPath editModeOpt freshlyLoaded imperativeExecution
+        desiredEye2dCenter desiredEye3dCenter desiredEye3dRotation masterSoundVolume masterSongVolume
+        snaps2dSelected snaps2d snaps3d creationElevation creationDistance alternativeEyeTravelInput
+        overlayMode =
+        { ProjectDllPath = dllPath
+          ProjectEditModeOpt = editModeOpt
+          ProjectFreshlyLoaded = freshlyLoaded
+          ProjectImperativeExecution = imperativeExecution
+          DesiredEye2dCenter = desiredEye2dCenter
+          DesiredEye3dCenter = desiredEye3dCenter
+          DesiredEye3dRotation = desiredEye3dRotation
+          MasterSoundVolume = masterSoundVolume
+          MasterSongVolume = masterSongVolume
+          Snaps2dSelected = snaps2dSelected
+          Snaps2d = snaps2d
+          Snaps3d = snaps3d
+          CreationElevation = creationElevation
+          CreationDistance = creationDistance
+          AlternativeEyeTravelInput = alternativeEyeTravelInput
+          OverlayMode = overlayMode }
+
+    /// The default Gaia state.
+    static member val defaultState =
+        GaiaState.make
+            "" None false false
+            v2Zero Constants.Engine.Eye3dCenterDefault quatIdentity Constants.Audio.SoundVolumeDefault Constants.Audio.SongVolumeDefault
+            true Constants.Gaia.Snaps2dDefault Constants.Gaia.Snaps3dDefault 0.0f 2.0f false false

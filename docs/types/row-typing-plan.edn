@@ -1,0 +1,218 @@
+; A/B/C design plan for row typing, effect typing, and their combination.
+; Documentation only. Tests and implementations are specified, not landed.
+
+{:plan/id "scale-row-effect-type-plan"
+ :title "Row typing (A), effect typing (B), and their combination (C)"
+ :status :design
+ :date "2026-11-06"
+
+ :interpretation
+ {:A "row typing for structural data: records, open rows, field projection"
+  :B "effect typing: closed and open effect sets, effect polymorphism"
+  :C "the combined kinded type system: A plus B with no cross-kind unification"
+  :note "A and B are independent sections; C is their combination. If the intended A/B split is different, this plan is the point to correct it."}
+
+ :shared-design
+ {:kinds
+  {:type "variables, primitives, sorts, records (A), functions"
+   :row "data rows (A): ordered labels and an optional nominal tail"
+   :set "effect sets (B): unordered labels and an optional nominal remainder"}
+  :variables
+  {:type "TypeVariable of int"
+   :row "RowVariable of int"
+   :set "SetVariable of int"
+   :rule "nominal namespaces; no cross-kind binding"}
+  :terms
+  {:A ["Variable" "Primitive" "Sort" "Record of Row<RecordField<Type>>" "Function of parameters and result"]
+   :B ["Variable" "Primitive" "Sort" "Function of parameters, result, and EffectSet"]
+   :C ["Variable" "Primitive" "Sort" "Record of Row<RecordField<Type>>" "Function of parameters, result, and EffectSet"]}
+  :schemes
+  {:A "quantifies TypeVariable and RowVariable"
+   :B "quantifies TypeVariable and SetVariable"
+   :C "quantifies TypeVariable, RowVariable, and SetVariable"}
+  :invariants
+  ["A row and a set never unify, even with identical labels."
+   "A row variable never binds a set term; a set variable never binds a row term."
+   "A closed row/effect is the default; open tails are introduced by a consumer."
+   "Every refusal is a named value."
+   "A works with no effect set; B works with no row."
+   "C is the only layer that contains both mechanisms."]
+  :shared
+  ["primitive and sort vocabulary"
+   "named diagnostics"
+   "scheme generalization and instantiation"
+   "book/expression inference harness"
+   "property and differential test harness"]}
+
+ :A
+ {:id :A
+  :name "Row typing"
+  :status :design
+  :independence "A must pass its full suite with B absent: no EffectSet, no SetVariable, no effect unification."
+  :contract
+  ["a record is a row of fields"
+   "field labels compare by name only"
+   "common field payloads unify with the type unifier"
+   "an open row absorbs fields with payloads"
+   "field access projects a present field or extends an open row"
+   "a closed row without a field is UnknownField"
+   "rows are quantified by schemes and freshened on instantiation"]
+  :algorithm
+  ["flatten rows to fields and a tail"
+   "refuse duplicate labels"
+   "unify common payloads"
+   "bind an open tail to absorbed fields plus the other tail"
+   "two open tails meet at a fresh common tail"
+   "occurs-check a row variable against the tail"
+   "field projection extends an open tail with a fresh field and tail"]
+  :properties
+  [{:id "A1" :statement "A row unifies with itself without substitution." :test "property row-reflexive"}
+   {:id "A2" :statement "Closed rows with different labels are refused." :test "property row-closed-mismatch"}
+   {:id "A3" :statement "An open row absorbs the other side's labels." :test "property row-absorption"}
+   {:id "A4" :statement "Two open rows meet at a fresh common tail." :test "property row-two-open"}
+   {:id "A5" :statement "A row variable cannot occur in itself." :test "property row-occurs"}
+   {:id "A6" :statement "Duplicate labels are refused." :test "property row-duplicate"}
+   {:id "A7" :statement "Common field payloads unify; a payload conflict is refused." :test "property row-payload"}
+   {:id "A8" :statement "Field access projects or extends a row; a missing closed field is refused." :test "property row-field-access"}
+   {:id "A9" :statement "A scheme quantifies and freshens row variables." :test "property row-scheme"}
+   {:id "A10" :statement "A row tail can carry lacks constraints without a set." :test "property row-lacks" :status :implemented}]
+  :tests
+  {:property ["row-reflexive" "row-closed-mismatch" "row-absorption" "row-two-open" "row-occurs" "row-duplicate" "row-payload" "row-field-access" "row-scheme" "row-lacks"]
+   :integration ["book with a closed record" "book with an open-record field access" "host/kinded row differential on the closed fragment"]
+   :snapshot ["row diagnostics" "field-access book result"]}
+  :formal-verification
+  {:hedgehog "all A properties over generated rows, fields, and payload types"
+   :smt "finite closed-row models only: encode labels as finite Boolean domains and check the unification verdict; open rows use the reference differential"
+   :differential "compare RowTypes/Unification with the self-hosted row unifier"
+   :limits "no SMT proof of open-row polymorphism; no proof assistant"}}
+
+ :B
+ {:id :B
+  :name "Effect typing"
+  :status :implemented
+  :independence "B must pass its full suite with A absent: no Row, no RowVariable, no record fields."
+  :contract
+  ["an effect set is Closed labels or Open(known, SetVariable)"
+   "closed sets unify by equality"
+   "an open set absorbs the other side's labels"
+   "two open sets meet at a fresh unknown"
+   "function effects unify with the set unifier"
+   "a scheme quantifies and freshens SetVariable"
+   "a call unions the callee's effects with argument effects"
+   "closed subtraction removes known labels; open subtraction needs a lacks constraint"]
+  :algorithm
+  ["apply the set substitution"
+   "closed/closed equality"
+   "open/closed subset and bind the difference"
+   "open/open fresh unknown with mutual differences"
+   "occurs-check a set variable"
+   "subtract closed labels; open subtraction adds a lacks constraint"]
+  :properties
+  [{:id "B1" :statement "Closed sets with equal labels unify." :test "property set-closed-equal"}
+   {:id "B2" :statement "Closed sets with different labels are refused." :test "property set-closed-mismatch"}
+   {:id "B3" :statement "An open set absorbs the other side's labels." :test "property set-absorption"}
+   {:id "B4" :statement "Two open sets meet at a fresh unknown." :test "property set-two-open"}
+   {:id "B5" :statement "A set variable cannot occur in itself." :test "property set-occurs"}
+   {:id "B6" :statement "Closed subtraction is set difference." :test "property set-subtract-closed"}
+   {:id "B7" :statement "Open subtraction adds a lacks constraint and refuses a later binding that contains the lacked label." :test "property set-subtract-open-lacks"}
+   {:id "B8" :statement "An open effect set binds to concrete effects." :test "property effect-polymorphism"}
+   {:id "B9" :statement "A word signature can quantify an effect variable." :test "property word-effect-scheme"}
+   {:id "B10" :statement "A block's latent effect reaches the call through a contextual parameter." :test "property contextual-effect"}]
+  :tests
+   {:property ["set-closed-equal" "set-closed-mismatch" "set-absorption" "set-two-open" "set-occurs" "set-subtract-closed" "set-subtract-open-lacks" "effect-polymorphism" "word-effect-scheme" "contextual-effect"]
+   :integration ["book with an effectful word" "word-signature effect propagation" "host effect differential on the closed fragment"]
+   :snapshot ["effect diagnostics" "emitted effect annotations"]}
+  :formal-verification
+  {:hedgehog "all B properties over generated label sets and effect variables"
+   :smt "finite closed effect-set models: encode labels as finite Boolean domains and check equality/subset/subtraction; open sets use a bounded model or differential"
+   :differential "compare LabelSets/Unification with the self-hosted set unifier"
+   :limits "no SMT proof of open-effect polymorphism or handlers"}}
+
+ :C
+ {:id :C
+  :name "Combined kinded type system"
+  :status :implemented
+  :combination
+  ["C is A plus B under one kinded dispatcher."
+   "Records use rows; functions use effect sets."
+   "A record field may carry a function with effects; the row and set meet only at the field type."
+   "Schemes quantify type, row, and set variables."
+   "No row/set cross-unification; no effect rows."
+   "C is not a user-facing subtyping system."
+   "C does not bridge to runtime shapes or the verification lattice in this plan."]
+  :properties
+  [{:id "C1" :statement "A row and a set are refused by the kind dispatcher." :test "property kindDispatcherSeparatesRowsAndSets"}
+   {:id "C2" :statement "A type variable never binds a row or set term." :test "property kindTypeVariableStaysInItsKind"}
+   {:id "C3" :statement "A scheme quantifies and freshens type, row, and set variables." :test "property schemeQuantifiesAllThreeKinds"}
+   {:id "C4" :statement "A record field with an effectful function unifies without making the row an effect set." :test "property fieldEffectBoundary"}
+   {:id "C5" :statement "Field access and effect propagation compose in one expression." :test "property fieldAndEffect"}
+   {:id "C6" :statement "The host adapter and the reference model agree on the closed fragment." :test "property hostReferenceDifferential"}]
+  :tests
+  {:property ["kindDispatcherSeparatesRowsAndSets" "kindTypeVariableStaysInItsKind" "schemeQuantifiesAllThreeKinds" "fieldEffectBoundary" "fieldAndEffect" "hostReferenceDifferential"]
+   :integration ["book with a record field holding an effectful function" "field access plus an effectful call" "self-hosted unifier differential"]
+   :snapshot ["combined diagnostics" "combined emitted artifacts"]}
+  :formal-verification
+  {:hedgehog "C properties over generated combined terms"
+   :smt "finite closed C fragments only; open polymorphism uses differential"
+   :differential "host TypeRetrieval vs Unification vs self-hosted unifier"
+   :limits "no proof of the combined open system; no subtyping"}}
+
+ :test-suite
+ {:levels
+  ["unit and property for A alone"
+   "unit and property for B alone"
+   "integration for A alone"
+   "integration for B alone"
+   "property for C"
+   "integration for C"
+   "snapshot for emitted artifacts and diagnostics"
+   "SMT/Z3 finite-model checks for A, B, and C"
+   "differential checks between host, reference, and self-hosted engines"]
+  :acceptance
+  ["A passes without B"
+   "B passes without A"
+   "C passes only after A and B pass"
+   "every property has a named test"
+   "every refusal has a test"
+   "every EDN property ID maps to a test"
+   "no filtered run counts as acceptance"]
+  :counts
+  {:current "1741 checks (1683 examples, 58 Hedgehog properties)"
+   :planned "A, B, and C add new properties and integration checks; counts are updated only when tests land"}}
+
+ :specification-double-testing
+ {:structural
+  {:tool "tools/type-system-check.fsx"
+   :checks ["required sections" "unique property IDs" "owner markers" "pure-value flags" "counts" "no retired artifacts"]}
+  :semantic
+  {:rule "each property ID has an executable property or integration test"
+   :checks ["property name cites its ID" "test fails without the implementation" "test is not derived from the implementation"]}
+  :formal
+  {:smt "finite closed fragments only"
+   :hedgehog "general algebraic properties"
+   :differential "open fragments against a reference engine"
+   :limits "no full formal proof; no proof assistant"}}
+
+ :implementation-order
+ ["A: row typing alone; full A suite green."
+  "B: effect typing alone; full B suite green."
+  "C: combine A and B; full C suite green."
+  "Verification bridge: only after C; one-way and checked."
+  "Do not add subtyping, handlers, runtime-shape bridges, or D12 bridges before C is green."]
+
+ :non-goals
+ ["user-facing subtyping"
+  "row-plus-subtyping"
+  "effect rows"
+  "general typed handlers and effect-label matching"
+  "second-class blocks"
+  "runtime-shape bridge"
+  "D12/P4 bridge"
+  "image-resident lattice macros"
+  "full formal proof"]
+
+ :open-questions
+ [{:id "Q1" :question "Is A rows and B effects, or is B record subtyping?" :default "this plan uses A = rows, B = effects; correct before implementation if different"}
+  {:id "Q2" :question "Does A need lacks constraints before it can ship independently?" :default "yes for principal open-row inference; closed rows work without them"}
+  {:id "Q3" :question "Does B need open subtraction before it can ship independently?" :default "closed effects work; open subtraction needs lacks and is consumed by the typed with-handler rule"}
+  {:id "Q4" :question "Is C allowed to add a verification bridge before A and B are green?" :default "no; the bridge is after C"}]}

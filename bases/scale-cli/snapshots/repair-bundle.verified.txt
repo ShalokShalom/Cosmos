@@ -1,0 +1,49 @@
+﻿{
+  "version": 1,
+  "property": "player canJump",
+  "sentence": {
+    "pattern": "Capability",
+    "subject": "player",
+    "conditions": [
+      "isAlive"
+    ],
+    "verb": "canJump"
+  },
+  "specHash": "9efa12fa857bff66662fa0a344a07bbabf5bc88a6408aa1c50a734e067fa5355",
+  "hedgehog": {
+    "tests": 4,
+    "shrinks": 1,
+    "values": [
+      "true",
+      "1"
+    ],
+    "seed": "test-seed"
+  },
+  "witness": [
+    {
+      "name": "alive",
+      "value": "true"
+    },
+    {
+      "name": "health",
+      "value": "1"
+    }
+  ],
+  "z3Model": [
+    {
+      "name": "alive",
+      "value": "true"
+    },
+    {
+      "name": "health",
+      "value": "1"
+    }
+  ],
+  "implementation": "(\u003E health 1)",
+  "encodedImplementation": "(\u003E health 1)",
+  "differential": "1/1 witnesses agree",
+  "source": {
+    "file": "demo/player.scale",
+    "line": 7
+  }
+}

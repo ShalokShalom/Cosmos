@@ -1,0 +1,24 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Library</OutputType>
+    <TargetFramework>net10.0</TargetFramework>
+    <RootNamespace>Scale</RootNamespace>
+  </PropertyGroup>
+  <ItemGroup>
+    <Compile Include="formal/discourse.fs" />
+    <Compile Include="formal/refiner.fs" />
+    <Compile Include="formal/decision-table.fs" />
+    <Compile Include="formal/decision-table-emitter.fs" />
+    <Compile Include="formal/diagnostics.fs" />
+    <Compile Include="formal/decision-table-surface.fs" />
+  </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="../core/Scale.Core.fsproj" />
+    <ProjectReference Include="typing/Scale.Typing.fsproj" />
+    <ProjectReference Include="../prelude/Scale.Prelude.fsproj" />
+  </ItemGroup>
+  <ItemGroup>
+    <PackageReference Include="Hedgehog" />
+    <PackageReference Include="Microsoft.Z3" />
+  </ItemGroup>
+</Project>

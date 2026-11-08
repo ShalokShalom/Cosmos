@@ -1,0 +1,73 @@
+> Historical design note (pre-D10). Current decisions live in
+> `docs/decision-records.md`; where this note says Lean is the oracle or `nor`
+> is broken, later work supersedes it.
+
+Scale: The Architecture, Concluded (Revised)
+I. The axiom
+
+Scale is built on one principle, and everything else follows from it: everything is one thing, expressed through one structure, interpreted through one protocol. We call it Nexus. Its design consequence is a discipline, not a slogan — wherever two mechanisms exist, one is debt. Its ledger consequence is stronger: a gap between the claimed invariant and the actual code is not just technical debt, it is a logical inconsistency that must be closed or named.
+
+The axiom generates three invariants that the code now enforces where it claims to hold:
+
+    Tensor is the only semantic type. A scalar is a rank-0 tensor. RealNumber is not a type; it is the name of the leaf storage, retired as a semantic category.
+
+    The image is the only state. Bindings, models, user words, vocabulary, quotations, bookmarks, tensors all live in the image. PC metadata (Program, Location, Baseline, Position, Reductions) is the one legitimate exception.
+
+    EntryId is the only reference. A compiler-level [<Struct>] encoding of an image reference, distinct from int, so that an image reference cannot be silently used as a counter. EntryId is an encoding, not a second semantic type — the runtime sees only tensors; the compiler sees nominally distinct types so the single-type thesis is statically enforced at the host boundary.
+
+II. What the language is, structurally
+
+A concatenative core with named-state escape hatches. The stack, quotations, apply, and sequencing-as-composition are genuinely concatenative. bind, lookup, ?x, and named models are deliberate departures — named state is anti-concatenative. Those departures are load-bearing: they are the seed of the unification pillar and the only way to hold a value across stack manipulations without mutation. The architecture is: concatenative core, named-state escape hatches for unification and persistent state, natural-language surface for composition.
+
+A two-audience design. The natural-language surface (LIA, controlled English) is for one audience; the concatenative core is for another (developers, machines). If this is the intent, it reframes the stubs: the parser and emitter are the product; the kernel is the target the product compiles to. Position-carrying diagnostics are not a nicety — they are what the child-facing audience needs to see when they get it wrong. Parser and emitter work is dependency-free (Tier 3 in dependency) but product-critical (Tier 1 in value). This reframe should be decided, not assumed.
+
+A verification-oriented compiler, not a verified one. The compiler produces verifiers (F# properties); Lean is the eventual oracle. Three readings are possible and the choice is open: (a) the compiler produces properties — the current state; (b) the compiler is itself proven correct — a much larger commitment; (c) the pipeline produces proof-carrying artifacts. "Verified compiler" was the word doing more work than the project can cash. "Verification-oriented" is defensible; "verified" is not.
+III. What the kernel does
+
+The evaluator is a flat loop over a reduction budget. No recursion in primitives; if, apply, define prepend their branches to Program rather than recursing. This is what makes Erlang-equivalent preemption achievable without a bytecode VM: the execution state is explicit — program, stack, bindings, PC — so yielding is a state snapshot, not a continuation capture.
+
+Errors split into two channels, and this split is the design's sharpest decision:
+
+    Defects (malformed program, stack underflow, unknown token) → Result → halt or supervise.
+
+    Would-block (CML sync not ready, guard failed) → suspension or branch-choice, not an error.
+
+failwith is incompatible because it unwinds past the scheduler and destroys readyQueue and currentProcess. Error semantics is Tier 1, first, because it is lowest-coupled and produces the supervisor seam that nor, the scheduler, and CML events all compose on.
+
+nor is the sole primitive of Vivid, and it is broken — its universe is "the current contents of the lexicon," which is history-dependent and category-wrong. It is blocked on value typing (what a free-standing model member is), not on universe choice. and and or are implemented independently of nor, which is a two-sources-of-truth hiding inside Tier 1.
+IV. What the code is honest about
+
+Where the thesis holds, it is enforced: references are nominal, data is image-resident, persistence round-trips bindings, edge and core agree on vocabulary availability.
+
+Where it does not hold, the gap is named as a deferred commitment, not papered over:
+
+    The scheduler is wrong-shaped (module-global mutable state) — not empty, but modeled for a different machine.
+
+    CML events, the event-stream, the F# → Lean transpiler, linear types — all deferred, with preconditions.
+
+    Multiple Dispatch is a placeholder, not the only polymorphism.
+
+    Unification is one-way assignment, not the pillar.
+
+    and / or are independent, not derived.
+
+    The Parser and Emitter emit non-compiling F# — but if the two-audience reframe holds, that is a product gap, not a kernel gap.
+
+V. The method
+
+The project's most valuable achievement this arc was not the interpreter and not the ledger — it was the lockstep between them. No ledger row was marked done without a regression test; no semantic change landed without a decision record. The terse directives — "go on," "try it," "succeed" — resolved through decision records rather than improvisation. That is what makes the ledger checkable and the kernel verifiable. Neither alone is the achievement; the discipline that produced both is.
+
+The ledger is the anti-drift device. The kernel is what makes the ledger a claim rather than a plan. They are complementary, and keeping them in lockstep is the practice the project should be measured by.
+VI. What remains open
+
+Three decisions, each determining a different branch:
+
+    Which meaning of "verification-oriented" is intended. (a) properties, (b) compiler correctness, (c) proof-carrying artifacts. The choice determines whether Lean is a backstop or the centerpiece.
+
+    Whether the two-audience surface is a requirement or a nicety. If a requirement, parser/emitter move up in the roadmap despite being dependency-free; if a nicety, "pipeline is stubbed" is fair.
+
+    Whether the named-state escape hatches stay as escape hatches or get reabsorbed. The framing "reserved for unification" implies they stay. That should be a decision record, not a description.
+
+VII. The one-sentence version
+
+Scale is a research prototype for a concatenative language built on a single axiom — everything is one thing — whose technical invariants (Tensor as sole type, image as sole state, EntryId as sole reference) are enforced where they claim to hold and named as deferred commitments where they do not; whose kernel is a flat, preemption-ready, reduction-counted loop over image-resident state; whose pipeline is the product rather than the weak part; whose compiler is verification-oriented, not verified; and whose distinguishing achievement is the lockstep between ledger and kernel — axiom stated, enforced, tested, honestly bounded — that turns the next step into a decision rather than a drift.

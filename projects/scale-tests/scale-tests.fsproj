@@ -1,0 +1,22 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net10.0</TargetFramework>
+    <RootNamespace>Scale</RootNamespace>
+  </PropertyGroup>
+  <ItemGroup>
+    <Compile Include="entry.fs" />
+  </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="../../components/verification/tests/Scale.Development.fsproj" />
+    <ProjectReference Include="../../components/cli/Scale.Cli.fsproj" />
+  </ItemGroup>
+  <ItemGroup>
+    <Content Include="../../components/ipc/vectors/*.bin" CopyToOutputDirectory="PreserveNewest" Link="wire-vectors/%(Filename)%(Extension)" />
+    <Content Include="../../components/kernel/term-vectors/*.json" CopyToOutputDirectory="PreserveNewest" Link="term-vectors/%(Filename)%(Extension)" />
+    <Content Include="../../components/demo/demo/generated/*" CopyToOutputDirectory="PreserveNewest" Link="demo/generated/%(Filename)%(Extension)" />
+    <Content Include="../../components/demo/demo/player.scale" CopyToOutputDirectory="PreserveNewest" Link="demo/player.scale" />
+    <Content Include="../../bases/scale-cli/witnesses/*" CopyToOutputDirectory="PreserveNewest" Link="witnesses/%(Filename)%(Extension)" />
+    <Content Include="../../bases/scale-cli/snapshots/*" CopyToOutputDirectory="PreserveNewest" Link="snapshots/%(Filename)%(Extension)" />
+  </ItemGroup>
+</Project>

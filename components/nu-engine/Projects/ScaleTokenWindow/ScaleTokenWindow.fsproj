@@ -1,0 +1,21 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+    <PropertyGroup>
+        <TargetFramework>net10.0</TargetFramework>
+        <OutputType>Exe</OutputType>
+    </PropertyGroup>
+
+    <Import Project="../../Nu/Nu.targets" />
+
+    <ItemGroup>
+        <None Include="Assets\*" />
+        <None Include="Assets\*\*" />
+        <Compile Include="TokenGame.fs" />
+        <Compile Include="TokenPlugin.fs" />
+        <Compile Include="Program.fs" />
+        <None Include="AssetGraph.nuag" />
+        <None Include="Overlayer.nuol" />
+        <None Include="App.config" />
+    </ItemGroup>
+
+</Project>

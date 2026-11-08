@@ -1,0 +1,23 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+    <PropertyGroup>
+        <TargetFramework>net10.0</TargetFramework>
+    </PropertyGroup>
+
+    <Import Project="../../Nu/Nu.targets" />
+
+    <ItemGroup>
+        <None Include="Assets\*" />
+        <None Include="Assets\*\*" />
+        <Compile Include="Assets.fs" />
+        <Compile Include="Simulants.fs" />
+        <Compile Include="Gameplay.fs" />
+        <Compile Include="MyGame.fs" />
+        <Compile Include="MyGamePlugin.fs" />
+        <Compile Include="Program.fs" />
+        <None Include="AssetGraph.nuag" />
+        <None Include="Overlayer.nuol" />
+        <None Include="App.config" />
+    </ItemGroup>
+
+</Project>

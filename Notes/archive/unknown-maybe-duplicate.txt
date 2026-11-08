@@ -1,0 +1,266 @@
+# =====================================================================
+# PRELUDE — type hierarchy
+# Real is the numerical root. Bool is nominal (Elixir semantics).
+# =====================================================================
+
+abstract type Any
+
+abstract type Real          <: Any
+abstract type Integer       <: Real
+abstract type AbstractFloat <: Real
+struct       Float32        <: AbstractFloat
+struct       Float64        <: AbstractFloat
+struct       BigFloat       <: AbstractFloat
+struct       Rational       <: Real
+struct       Irrational     <: Real
+
+abstract type Atom      <: Any
+abstract type BitString <: Any
+abstract type Binary    <: BitString
+abstract type Bool      <: Any    # nominal, NOT <: Integer
+
+abstract type List{T}    <: Any
+abstract type Tuple{...} <: Any
+abstract type Map{K, V}  <: Any
+
+abstract type Function  <: Any
+abstract type PID       <: Any
+abstract type Port      <: Any
+abstract type Reference <: Any
+
+# =====================================================================
+# MULTIPLE DISPATCH — translated from Julia
+# `method` = typed, specificity-resolved, unordered, open by default.
+# =====================================================================
+
+module Geometry
+    struct Circle    ; radius::Real              ; end
+    struct Rectangle ; width::Real, height::Real ; end
+    struct Triangle  ; base::Real,  height::Real ; end
+
+    method Area.area(shape)                       # head declaration
+
+    method Area.area(shape: Circle)
+        π * shape.radius ^ 2
+    end
+
+    method Area.area(shape: Rectangle)
+        shape.width * shape.height
+    end
+
+    method Area.area(shape: Triangle)
+        (shape.base * shape.height) / 2
+    end
+
+    method Area.area(shape: Any)                  # least specific, fallback
+        throw(ArgumentError("unsupported shape"))
+    end
+end
+
+# =====================================================================
+# PATTERN MATCHING — translated from Elixir `def`
+# `clause` = ordered, first-match, closed, guards allowed.
+# =====================================================================
+
+module Sign
+    clause Sign.describe(value)                   # head declaration
+
+    clause Sign.describe(value) when value < 0
+        "negative"
+    end
+
+    clause Sign.describe(value) when value == 0
+        "zero"
+    end
+
+    clause Sign.describe(value)
+        "positive"
+    end
+end
+
+# =====================================================================
+# PROTOCOL — translated from `defprotocol` / `defimpl`
+# A group is a set of `method` heads. Impl clauses are ordinary methods.
+# =====================================================================
+
+module Size
+    method Size.size(data)   group Size
+    method Size.empty?(data) group Size
+
+    # impl for BitString
+    method Size.size(data: BitString)
+        byte_size(data)
+    end
+
+    method Size.empty?(data: BitString)
+        byte_size(data) == 0
+    end
+
+    # impl for Map
+    method Size.size(data: Map)
+        map_size(data)
+    end
+
+    method Size.empty?(data: Map)
+        map_size(data) == 0
+    end
+
+    # fallback (was @fallback_to_any true)
+    method Size.size(data: Any)
+        :unknown
+    end
+
+    method Size.empty?(data: Any)
+        :unknown
+    end
+end
+
+# =====================================================================
+# PARAMETRIC TYPES AND WHERE CLAUSES
+# =====================================================================
+
+module Collect
+    method Collect.sum(values)
+
+    method Collect.sum(values: List{T}) where T <: Integer
+        reduce(values, 0, +)
+    end
+
+    method Collect.sum(values: List{T}) where T <: Real
+        reduce(values, 0.0, +)
+    end
+
+    method Collect.mean(values: List{T}) where T <: Real
+        Collect.sum(values) / length(values)
+    end
+
+    method Collect.keys(map: Map{K, V}) where {K, V}
+        [k for k in map]
+    end
+end
+
+# =====================================================================
+# MODIFIERS
+# =====================================================================
+
+# closed — seal the generic function against external extension
+module Money
+    method Money.add(a, b) closed
+
+    method Money.add(a: Dollar, b: Dollar)
+        Dollar(a.cents + b.cents)
+    end
+
+    method Money.add(a: Euro, b: Euro)
+        Euro(a.cents + b.cents)
+    end
+end
+
+# private — unconditionally closed, not exported
+module Normalize
+    method Normalize.magnitude(vector) private
+
+    method Normalize.magnitude(vector: List{T}) where T <: Real
+        Math.sqrt(reduce(vector, 0.0, (acc, v) -> acc + v * v))
+    end
+
+    method Normalize.unit(vector) private
+
+    method Normalize.unit(vector: List{T}) where T <: Real
+        magnitude = Normalize.magnitude(vector)
+        [v / magnitude for v in vector]
+    end
+end
+
+# partial — suppress exhaustiveness warning on ordered function
+module Parse
+    clause Parse.nonneg(value) partial
+
+    clause Parse.nonneg(value) when is_integer(value) and value >= 0
+        value
+    end
+
+    clause Parse.nonneg(value) when is_float(value) and value >= 0.0
+        value
+    end
+    # no catch-all — negative inputs raise FunctionClauseError
+end
+
+# =====================================================================
+# EXTENSION — signalled by qualified name across modules
+# =====================================================================
+
+module CustomGeometry
+    struct Pentagon
+        side::Real
+    end
+
+    method Area.area(shape: Pentagon)             # extends Area.area
+        (1 / 4) * Math.sqrt(5 * (5 + 2 * Math.sqrt(5))) * shape.side ^ 2
+    end
+end
+
+# =====================================================================
+# HEAD IS OPTIONAL when no modifier is needed
+# =====================================================================
+
+module Optional
+    method Optional.double(n: Integer)
+        2 * n
+    end
+
+    method Optional.double(n: Real)
+        2.0 * n
+    end
+end
+
+# =====================================================================
+# ILLEGAL CASES — every one is a compile-time error
+# =====================================================================
+
+# clause is always closed — cannot extend from another module
+module Illegal1
+    clause Sign.describe(value) when is_custom(value)
+        "custom"
+    end
+end
+
+# clause cannot carry a type annotation
+module Illegal2
+    clause Sign.describe(value: CustomType)
+        "custom"
+    end
+end
+
+# method cannot carry a guard
+module Illegal3
+    method Area.area(shape: Circle) when shape.radius > 0
+        π * shape.radius ^ 2
+    end
+end
+
+# method cannot carry a pattern
+module Illegal4
+    method Area.area(shape: %{radius: r})
+        π * r ^ 2
+    end
+end
+
+# group is only valid on method heads
+module Illegal5
+    clause Size.volume(data) group Size
+end
+
+# private head cannot be extended from another module
+module Illegal6
+    method Normalize.magnitude(vector: List{Integer})
+        0
+    end
+end
+
+# closed head cannot be extended
+module Illegal7
+    method Money.add(a: Pound, b: Pound)
+        Pound(a.cents + b.cents)
+    end
+end
